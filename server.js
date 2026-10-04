@@ -590,23 +590,65 @@ function validPhone(value) { return value.length >= 8 && value.length <= 30; }
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
 function upsertCustomerFromReservation(item) {
   const customers = readJson(CUSTOMERS_FILE, []);
-  let customer = customers.find(x => x.name === item.name && x.birthDate === item.birthDate);
   const now = new Date().toISOString();
-  if (!customer) {
-    customer = { id: crypto.randomUUID(), name: item.name, birthDate: item.birthDate, phone: item.phone || '', createdAt: now, updatedAt: now, history: [], tags: [] };
+  const samePerson = c => (
+    (item.customerId && c.id === item.customerId) ||
+    (String(c.name || '').trim() === String(item.name || '').trim() &&
+      String(c.birthDate || c.birth_date || '').trim() === String(item.birthDate || item.birth_date || '').trim())
+  );
+  let matches = customers.filter(samePerson);
+
+  if (!matches.length) {
+    const customer = {
+      id: item.customerId || crypto.randomUUID(),
+      name: item.name,
+      birthDate: item.birthDate || item.birth_date || '',
+      phone: item.phone || '',
+      createdAt: now,
+      updatedAt: now,
+      history: [],
+      tags: []
+    };
     customers.push(customer);
-  } else {
-    let changed = false;
-    if (item.phone && customer.phone !== item.phone) { customer.phone = item.phone; changed = true; }
-    if (changed) customer.updatedAt = now;
+    matches = [customer];
+    item.customerId = customer.id;
+  } else if (!item.customerId) {
+    item.customerId = matches[0].id;
   }
-  const h = { reservationId: item.id, date: item.date, startTime: item.startTime, endTime: item.endTime, serviceId: item.serviceId, serviceName: item.serviceName, durationMinutes: item.durationMinutes, status: item.status, note: item.note || '', myNote: item.myNote || '', statusLabel: item.statusLabel || '', otherStatus: item.otherStatus || '', tags: Array.isArray(item.tags) ? item.tags : [], updatedAt: item.updatedAt };
-  const idx = customer.history.findIndex(x => x.reservationId === item.id);
-  if (idx >= 0) customer.history[idx] = h; else customer.history.push(h);
-  customer.history.sort((a,b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`));
-  customer.updatedAt = now;
+
+  const h = {
+    reservationId: item.id,
+    date: item.date,
+    startTime: item.startTime,
+    endTime: item.endTime,
+    serviceId: item.serviceId,
+    serviceName: item.serviceName,
+    durationMinutes: item.durationMinutes,
+    status: item.status,
+    note: item.note || '',
+    myNote: item.myNote || '',
+    statusLabel: item.statusLabel || '',
+    otherStatus: item.otherStatus || '',
+    tags: Array.isArray(item.tags) ? item.tags : [],
+    updatedAt: item.updatedAt
+  };
+
+  // Update every matching profile so a legacy duplicate customer record
+  // cannot retain a stale reservation status. The V1 merge key remains
+  // name + birthDate; customerId is preferred once established.
+  for (const customer of matches) {
+    if (item.phone && customer.phone !== item.phone) customer.phone = item.phone;
+    const history = Array.isArray(customer.history) ? customer.history : [];
+    const idx = history.findIndex(x => x.reservationId === item.id);
+    if (idx >= 0) history[idx] = h; else history.push(h);
+    history.sort((a,b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`));
+    customer.history = history;
+    customer.updatedAt = now;
+    customer.tags = [...new Set(history.flatMap(x => Array.isArray(x.tags) ? x.tags : []))].slice(0, 30);
+  }
+
   atomicWrite(CUSTOMERS_FILE, customers);
-  return customer;
+  return matches[0];
 }
 function syncPersonTags(name, birthDate, tags) {
   const clean=[...new Set((Array.isArray(tags)?tags:[]).map(x=>String(x).trim()).filter(Boolean))].slice(0,30);
@@ -1129,6 +1171,7 @@ const server = http.createServer(async (req, res) => {
         await queueWrite(RESERVATIONS_FILE, reservations);
         invalidateCalendarCaches();
         upsertCustomerFromReservation(item);
+        await flushStorage();
         return json(res, 200, { ok: true, reservation: item });
       }
       return json(res, 404, { error: 'Not found' });
