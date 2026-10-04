@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>蘿妮的療癒空間｜修改後預約資訊</title>
+<style>
+:root{--violet:#8e76b7;--violet-dark:#4d3b67;--cream:#fffaf2;--amber:#c89b50;--ink:#30263a;--muted:#71657d;--line:#e8dfed;--glass:rgba(255,255,255,.88)}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;color:var(--ink);font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;background:linear-gradient(135deg,#f3edf8 0%,#e8def1 48%,#fbf3e7 100%)}
+.wrap{max-width:760px;margin:auto;padding:28px 18px 70px}
+.glass{background:var(--glass);border:1px solid rgba(255,255,255,.9);backdrop-filter:blur(18px);box-shadow:0 18px 55px rgba(72,50,92,.12);border-radius:24px}
+header{padding:24px 28px;margin-bottom:18px}h1{margin:0;color:var(--violet-dark);font-size:28px}.magic{color:var(--amber)}
+.panel{padding:26px}.summary{padding:18px;border-radius:14px;background:#faf7fc;border:1px solid var(--line);line-height:1.9}.row{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}.row:last-child{border-bottom:0}.label{font-weight:700;min-width:56px;color:var(--violet-dark)}.value{overflow-wrap:anywhere}
+.actions{display:flex;justify-content:flex-end;margin-top:28px}button{border:1px solid transparent;border-radius:12px;padding:11px 20px;background:linear-gradient(135deg,#9e87c5,#72588f);color:white;font-weight:700;cursor:pointer;min-width:120px}.muted{color:var(--muted);font-size:14px;margin-top:8px}
+@media(max-width:600px){.wrap{padding:10px 10px 32px}.glass{border-radius:18px}header{padding:18px 16px}.panel{padding:16px}h1{font-size:23px}.row{display:block}.label{display:block;margin-bottom:3px}.actions{margin-top:22px}.actions button{width:100%;min-height:46px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="glass"><h1><span class="magic">✦</span> 修改後預約資訊</h1><div class="muted">預約已修改完成，以下為最新預約資訊。</div></header>
+<section class="glass panel">
+<div id="info" class="summary"></div>
+<div class="actions"><button type="button" id="backBooking">返回預約</button></div>
+</section>
+</div>
+<script>
+const info=document.getElementById('info');
+const esc=s=>String(s??'—').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+let r=null;
+try{r=JSON.parse(sessionStorage.getItem('ronnieModifyResult')||'null')}catch(e){r=null}
+if(!r){info.innerHTML='<div class="row"><span class="value">找不到修改後的預約資訊。</span></div>'}else{
+ const time=(r.startTime||'—')+'–'+(r.endTime||'—');
+ info.innerHTML=[
+  ['姓名',r.name],['生日',r.birthDate],['電話',r.phone],['服務',r.serviceName],['日期',r.date],['時間',time]
+ ].map(x=>`<div class="row"><span class="label">${esc(x[0])}：</span><span class="value">${esc(x[1])}</span></div>`).join('');
+}
+document.getElementById('backBooking').onclick=()=>{sessionStorage.removeItem('ronnieModifyResult');window.location.href='/'};
+</script>
+</body>
+</html>
