@@ -267,7 +267,7 @@ async function readSupabaseSnapshot(table) {
       table,
       'GET',
       null,
-      `?select=*&limit=${pageSize}&offset=${offset}`
+      `?select=*&order=id.asc&limit=${pageSize}&offset=${offset}`
     );
     if (!Array.isArray(page)) {
       throw new Error(`Supabase ${table} snapshot returned a non-array response`);
