@@ -1034,14 +1034,32 @@ const server = http.createServer(async (req, res) => {
           invalidateCalendarCaches();
           return json(res, 200, {ok:true, importedAt:new Date().toISOString(), reservations:reservations.length, customers:customers.length, closures:closures.length});
         } catch (e) {
-          try {
-            await queueWrite(RESERVATIONS_FILE, old.reservations);
-            await queueWrite(CUSTOMERS_FILE, old.customers);
-            await queueWrite(CLOSURES_FILE, old.closures);
-            // 網站設定不在本次匯入範圍，因此不回復／刪除 settings.json。
-          } catch {}
+          const rollbackFailures = [];
+          const rollbackTasks = [
+            ['reservations', RESERVATIONS_FILE, old.reservations],
+            ['customers', CUSTOMERS_FILE, old.customers],
+            ['closures', CLOSURES_FILE, old.closures]
+          ];
+
+          for (const [name, file, data] of rollbackTasks) {
+            try {
+              await queueWrite(file, data);
+            } catch (rollbackError) {
+              rollbackFailures.push(name);
+            }
+          }
+
+          // 網站設定不在本次匯入範圍，因此不回復／刪除 settings.json。
           invalidateCalendarCaches();
-          return json(res, 500, {error:'匯入失敗，已嘗試回復匯入前資料'});
+
+          if (rollbackFailures.length > 0) {
+            return json(res, 500, {
+              error: '匯入失敗，部分資料回復失敗',
+              rollbackFailed: rollbackFailures
+            });
+          }
+
+          return json(res, 500, {error:'匯入失敗，已回復匯入前資料'});
         }
       }
       if (req.method === 'GET' && u.pathname === '/api/admin/closures') {
