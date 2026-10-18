@@ -30,8 +30,8 @@ async function runScenario(name, configure, data = [{id:'new-1',name:'new'}]) {
       if (method === 'GET') {
         if (table === 'app_state') return state.tables.app_state.filter(r => query.includes('reservation_meta') ? r.key==='reservation_meta' : true).map(r=>({...r}));
         const sorted = [...state.tables[table]].sort((a,b)=>String(a.id).localeCompare(String(b.id)));
-        const offset = Number((query.match(/offset=(\\d+)/)||[])[1] || 0);
-        const limit = Number((query.match(/limit=(\\d+)/)||[])[1] || sorted.length || 1);
+        const offset = Number((query.match(/offset=(\d+)/)||[])[1] || 0);
+        const limit = Number((query.match(/limit=(\d+)/)||[])[1] || sorted.length || 1);
         return sorted.slice(offset, offset + limit).map(r=>({...r}));
       }
       if (method === 'DELETE') {
