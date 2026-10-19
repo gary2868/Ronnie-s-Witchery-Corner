@@ -37,6 +37,13 @@ label{display:block;margin:14px 0 7px;color:#5e5268}
 .inlineDetail{flex:0 0 100%;width:100%;min-width:0;max-width:100%;box-sizing:border-box;align-self:stretch;margin-left:0;margin-right:0}
 .calendarStatusLegend{display:none!important}
 .booking.cancelled{opacity:.62}
+.adminAccordion{margin-top:14px;border:1px solid var(--line);border-radius:14px;background:#fbf9fd;overflow:hidden}
+.adminAccordion>summary{cursor:pointer;list-style:none;padding:12px 15px;font-weight:600;display:flex;align-items:center;gap:8px;user-select:none}
+.adminAccordion>summary::-webkit-details-marker{display:none}
+.adminAccordion>summary::before{content:'▸';display:inline-block;transition:transform .15s;color:var(--muted)}
+.adminAccordion[open]>summary::before{transform:rotate(90deg)}
+.adminAccordion .accCount{font-weight:400;font-size:12px;color:var(--muted);background:#eee8f4;border-radius:999px;padding:1px 8px}
+.adminAccordion>.admin-list{padding:0 12px 12px}
 .booking.expired{opacity:.8}
 .status{display:inline-block;padding:4px 9px;border-radius:999px;background:#eee8f4;color:#675778;font-size:12px}
 .bookingActions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -556,16 +563,18 @@ function isExpiredReservation(x) {
 }
 
 function displayStatus(x) {
-  // Cancel 與 CANCELLED 統一顯示
+  // 1. Cancel 與 CANCELLED 統一顯示
   if (isCancelledReservation(x)) return 'CANCELLED';
 
-  if (isExpiredReservation(x)) return 'Expired';
-
+  // 2. 已選擇的預定狀態優先（Finished / No-show / Other…），過期預約也一樣
   if (x.statusLabel) {
     return x.statusLabel === 'Other' && x.otherStatus
       ? x.otherStatus
       : x.statusLabel;
   }
+
+  // 3. 已過期且尚未選擇狀態：預設顯示 Finished
+  if (isExpiredReservation(x)) return 'Finished';
 
   return x.status || '';
 }
@@ -636,6 +645,84 @@ function compareReservationDateTime(a, b, direction = 1) {
   return direction * sa.localeCompare(sb);
 }
 
+window.__adminAccordionOpen = window.__adminAccordionOpen || { expired: false, cancelled: false };
+
+function renderAccordion(key, title, arr, cardsHtml) {
+  if (!arr.length) return '';
+
+  return `
+    <details class="adminAccordion" data-accordion="${key}" ${window.__adminAccordionOpen[key] ? 'open' : ''}
+             ontoggle="window.__adminAccordionOpen['${key}'] = this.open">
+      <summary><span>${title}</span><span class="accCount">${arr.length}</span></summary>
+      ${cardsHtml(arr)}
+    </details>
+  `;
+}
+
+function renderBookingCard(x) {
+  const isCancelled = isCancelledReservation(x);
+  const isExpired = !isCancelled && isExpiredReservation(x);
+  const eid = encodeURIComponent(x.id);
+
+  return `
+    <div class="booking ${isCancelled ? 'cancelled' : ''} ${isExpired ? 'expired' : ''}">
+      <div>
+        <b>${esc(x.name)}</b>
+        ${
+          Array.isArray(x.tags) && x.tags.length
+            ? x.tags.map(t => `<span class="tag">${esc(t)}</span>`).join(' ')
+            : ''
+        }
+        <br>
+        預約日期：${esc(x.date)} ·
+        ${esc(x.startTime)}–${esc(x.endTime)}
+        <br>
+        ${esc(x.serviceName)}
+        <div class="muted">
+          <span class="status" id="statusBadge-${eid}">${esc(displayStatus(x))}</span>
+        </div>
+      </div>
+
+      <div class="bookingActions">
+        <button class="secondary" onclick="showDetail('${eid}')">查看詳細</button>
+        ${
+          !isCancelled && !isExpired
+            ? `<button class="danger" onclick="cancelBooking('${eid}')">取消預約</button>`
+            : ''
+        }
+      </div>
+
+      <div id="detail-${eid}" class="inlineDetail"></div>
+    </div>
+  `;
+}
+
+/* 點選預定狀態時，即時同步卡片上服務下方的狀態標籤 */
+function previewReservationStatus(v) {
+  const x = window.currentDetailReservation;
+  if (!x) return;
+
+  const badge = $('statusBadge-' + encodeURIComponent(x.id));
+  if (!badge) return;
+
+  const other = v === 'Other' ? ($('otherStatusInput')?.value.trim() || '') : '';
+  badge.textContent = displayStatus({ ...x, statusLabel: v, otherStatus: other });
+}
+
+/* 關閉詳細資料（未儲存）時，標籤還原為已儲存的狀態 */
+function restoreStatusBadge(id) {
+  const x = (window.__detailOriginals || {})[decodeURIComponent(id)];
+  const badge = $('statusBadge-' + id);
+  if (x && badge) badge.textContent = displayStatus(x);
+}
+
+function closeReservationDetail(btn) {
+  const box = btn.closest('.inlineDetail');
+  if (!box) return;
+  restoreStatusBadge(box.id.replace(/^detail-/, ''));
+  box.innerHTML = '';
+}
+
 async function loadAdmin() {
   try {
     const date = $('adminDate').value;
@@ -673,44 +760,22 @@ async function loadAdmin() {
     window.__adminRenderedList = list;
     window.__adminRenderedExpired = new Set(expired.map(x => x.id));
 
-    $('adminContent').innerHTML = list.length
-      ? `<div class="admin-list">${list.map(x => {
-          const isCancelled = isCancelledReservation(x);
-          const isExpired = !isCancelled && isExpiredReservation(x);
+    const cardsHtml = arr => `<div class="admin-list">${arr.map(renderBookingCard).join('')}</div>`;
 
-          return `
-            <div class="booking ${isCancelled ? 'cancelled' : ''} ${isExpired ? 'expired' : ''}">
-              <div>
-                <b>${esc(x.name)}</b>
-                ${
-                  Array.isArray(x.tags) && x.tags.length
-                    ? x.tags.map(t => `<span class="tag">${esc(t)}</span>`).join(' ')
-                    : ''
-                }
-                <br>
-                預約日期：${esc(x.date)} ·
-                ${esc(x.startTime)}–${esc(x.endTime)}
-                <br>
-                ${esc(x.serviceName)}
-                <div class="muted">
-                  <span class="status">${esc(displayStatus(x))}</span>
-                </div>
-              </div>
+    // 未選擇特定日期：第二區（Expired）、第三區（Cancelled）使用折疊面板
+    const useAccordion = !date;
 
-              <div class="bookingActions">
-                <button class="secondary" onclick="showDetail('${encodeURIComponent(x.id)}')">查看詳細</button>
-                ${
-                  !isCancelled && !isExpired
-                    ? `<button class="danger" onclick="cancelBooking('${encodeURIComponent(x.id)}')">取消預約</button>`
-                    : ''
-                }
-              </div>
-
-              <div id="detail-${encodeURIComponent(x.id)}" class="inlineDetail"></div>
-            </div>
-          `;
-        }).join('')}</div>`
-      : '目前沒有預約紀錄。';
+    if (!list.length) {
+      $('adminContent').innerHTML = '目前沒有預約紀錄。';
+    } else if (useAccordion) {
+      $('adminContent').innerHTML =
+        (active.length ? cardsHtml(active) : '') +
+        renderAccordion('expired', 'Expired', expired, cardsHtml) +
+        renderAccordion('cancelled', 'Cancelled', cancelled, cardsHtml);
+    } else {
+      // 已選擇日期：維持單一清單（三區順序不變）
+      $('adminContent').innerHTML = cardsHtml(list);
+    }
 
   } catch (e) {
     if (e.message === '未登入') {
@@ -747,6 +812,7 @@ setInterval(() => {
 async function showDetail(id) {
   const existing = $('detail-' + id);
   if (existing && existing.innerHTML.trim()) {
+    restoreStatusBadge(id);
     existing.innerHTML = '';
     return;
   }
@@ -758,10 +824,15 @@ async function showDetail(id) {
 
     const noteValue = String(x.myNote || '').replace(/"/g, '&quot;');
     const tags = Array.isArray(x.tags) ? x.tags : [];
-    const status = isCancelledReservation(x) ? 'Cancel' : (x.statusLabel || '');
+    // 已過期且尚未選擇狀態時，預設選取 Finished（與列表顯示一致）
+    const status = isCancelledReservation(x)
+      ? 'Cancel'
+      : (x.statusLabel || (isExpiredReservation(x) ? 'Finished' : ''));
     const lockedCancelled = isCancelledReservation(x);
 
     window.currentDetailReservation = x;
+    window.__detailOriginals = window.__detailOriginals || {};
+    window.__detailOriginals[x.id] = x;
 
     const detailBox = $('detail-' + encodeURIComponent(x.id));
     if (!detailBox) return;
@@ -795,14 +866,14 @@ async function showDetail(id) {
           <div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               ${['Finished','Cancel','No-show','Other'].map(v => `<button type="button" class="secondary statusChoice ${status === v ? 'selected' : ''}" ${lockedCancelled && v !== 'Cancel' ? 'disabled style="opacity:.4;cursor:not-allowed"' : ''} onclick="chooseStatus('${v}')">${v}</button>`).join('')}
-              <input id="otherStatusInput" class="${status === 'Other' ? '' : 'hidden'}" maxlength="100" placeholder="請輸入自定義狀態" value="${esc(x.otherStatus || '')}" style="max-width:220px;flex:1 1 180px">
+              <input id="otherStatusInput" oninput="previewReservationStatus('Other')" class="${status === 'Other' ? '' : 'hidden'}" maxlength="100" placeholder="請輸入自定義狀態" value="${esc(x.otherStatus || '')}" style="max-width:220px;flex:1 1 180px">
               <button class="primary" style="margin-left:auto" onclick="saveReservationDetail('${encodeURIComponent(x.id)}')">儲存</button>
             </div>
           </div>
         </div>
 
         <div class="actions">
-          <button class="secondary" onclick="this.closest('.inlineDetail').innerHTML=''">關閉</button>
+          <button class="secondary" onclick="closeReservationDetail(this)">關閉</button>
         </div>
       </div>
     `;
@@ -829,6 +900,8 @@ function chooseStatus(v) {
     input.classList.toggle('hidden', v !== 'Other');
     if (v === 'Other') input.focus();
   }
+
+  previewReservationStatus(v);
 }
 
 async function saveReservationDetail(id) {
@@ -1021,7 +1094,7 @@ function renderCustomers() {
                 const historyCancelled = isCancelledReservation(h);
                 const historyStatus = historyCancelled
                   ? 'CANCELLED'
-                  : (h.statusLabel || '—');
+                  : (h.statusLabel || (isExpiredReservation(h) ? 'Finished' : '—'));
 
                 return `<div class="customerHistoryItem">
                   <button type="button" class="historyJump" onclick="openCustomerReservation('${encodeURIComponent(h.reservationId || '')}')">
@@ -1049,6 +1122,10 @@ async function openCustomerReservation(id) {
 
     const detail = $('detail-' + encodeURIComponent(rid));
     if (detail) {
+      // 若該預約位於折疊面板內，先展開
+      const acc = detail.closest('details.adminAccordion');
+      if (acc) acc.open = true;
+
       const row = detail.closest('.booking');
       if (row) row.scrollIntoView({behavior:'smooth',block:'center'});
       await showDetail(rid);
