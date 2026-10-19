@@ -520,17 +520,38 @@ function isCancelledReservation(x) {
          statusLabel === 'CANCELLED';
 }
 
-function isExpiredReservation(x) {
-  if (!x || !x.date || !x.endTime) return false;
+/*
+ * 網站統一時區：Asia/Taipei。
+ * 回傳「台北當下的牆上時間」，以 Date.UTC 編碼成可比較的數值，
+ * 與 reservationDateTimeKey() 使用相同編碼方式，不受瀏覽器所在時區影響。
+ */
+function taipeiNowKey() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date());
 
-  // 已取消預約不列入逾期分類
+  const get = type => Number(parts.find(p => p.type === type)?.value || 0);
+
+  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'));
+}
+
+/* 預約結束時間（台北牆上時間編碼）；無法解析則回傳 null */
+function reservationEndKey(x) {
+  return reservationDateTimeKey({ date: x?.date, startTime: x?.endTime });
+}
+
+function isExpiredReservation(x) {
+  if (!x) return false;
+
+  // 先判斷取消，已取消預約不列入過期分類
   if (isCancelledReservation(x)) return false;
 
-  const endDateTime = new Date(`${x.date}T${x.endTime}:00`);
+  const endKey = reservationEndKey(x);
+  if (endKey === null) return false;
 
-  if (Number.isNaN(endDateTime.getTime())) return false;
-
-  return endDateTime.getTime() < Date.now();
+  return endKey < taipeiNowKey();
 }
 
 function displayStatus(x) {
@@ -709,6 +730,7 @@ async function showDetail(id) {
     const noteValue = String(x.myNote || '').replace(/"/g, '&quot;');
     const tags = Array.isArray(x.tags) ? x.tags : [];
     const status = isCancelledReservation(x) ? 'Cancel' : (x.statusLabel || '');
+    const lockedCancelled = isCancelledReservation(x);
 
     window.currentDetailReservation = x;
 
@@ -743,7 +765,7 @@ async function showDetail(id) {
           <div class="detailLabel">預定狀態</div>
           <div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              ${['Finished','Cancel','No-show','Other'].map(v => `<button type="button" class="secondary statusChoice ${status === v ? 'selected' : ''}" onclick="chooseStatus('${v}')">${v}</button>`).join('')}
+              ${['Finished','Cancel','No-show','Other'].map(v => `<button type="button" class="secondary statusChoice ${status === v ? 'selected' : ''}" ${lockedCancelled && v !== 'Cancel' ? 'disabled style="opacity:.4;cursor:not-allowed"' : ''} onclick="chooseStatus('${v}')">${v}</button>`).join('')}
               <input id="otherStatusInput" class="${status === 'Other' ? '' : 'hidden'}" maxlength="100" placeholder="請輸入自定義狀態" value="${esc(x.otherStatus || '')}" style="max-width:220px;flex:1 1 180px">
               <button class="primary" style="margin-left:auto" onclick="saveReservationDetail('${encodeURIComponent(x.id)}')">儲存</button>
             </div>
@@ -764,6 +786,9 @@ async function showDetail(id) {
 }
 
 function chooseStatus(v) {
+  // 已取消的預約時段已釋放，不可改回其他狀態
+  if (isCancelledReservation(window.currentDetailReservation) && v !== 'Cancel') return;
+
   window.selectedReservationStatus = v;
 
   document.querySelectorAll('.statusChoice').forEach(b => {
@@ -799,12 +824,23 @@ async function saveReservationDetail(id) {
 
     let saved = noteResult.reservation || window.currentDetailReservation;
 
+    // 選擇 Cancel：先呼叫正式取消 API（status=CANCELLED、釋放時段），
+    // 讓 Cancel 與 CANCELLED 在前後端代表同一件事。
+    if (v === 'Cancel' && !isCancelledReservation(window.currentDetailReservation)) {
+      if (!await showAdminActionConfirm('選擇 Cancel 會取消此筆預約，時段會恢復可預約。確定取消？', '確定取消')) {
+        return;
+      }
+
+      const cancelResult = await api('/api/admin/reservations/' + id + '/cancel', {
+        method:'PATCH'
+      });
+
+      saved = cancelResult.reservation || saved;
+      adminCalendarCache.clear();
+    }
+
     if (v) {
-      /*
-       * Cancel 仍透過 statusLabel 儲存。
-       * 前端會將 statusLabel=Cancel 視為取消狀態。
-       * 後端是否同步設定 status=CANCELLED，需另行確認。
-       */
+      // 同步寫入 statusLabel，保持與既有資料格式一致
       const statusResult = await api('/api/admin/reservations/' + id + '/status', {
         method:'PATCH',
         headers:{'Content-Type':'application/json'},
@@ -817,6 +853,7 @@ async function saveReservationDetail(id) {
     window.currentDetailReservation = saved;
     await loadAdmin();
     await loadCustomers();
+    if (v === 'Cancel') await loadCalendar();
   } catch (e) {
     alert(e.message);
   }
