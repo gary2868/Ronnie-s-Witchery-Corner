@@ -257,6 +257,27 @@ function supabaseRowFromClosure(item) {
   };
 }
 
+async function readSupabaseSnapshot(table) {
+  const pageSize = 500;
+  const rows = [];
+  let offset = 0;
+
+  while (true) {
+    const page = await supabaseRequest(
+      table,
+      'GET',
+      null,
+      `?select=*&order=id.asc&limit=${pageSize}&offset=${offset}`
+    );
+    if (!Array.isArray(page)) {
+      throw new Error(`Supabase ${table} snapshot returned a non-array response`);
+    }
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+    offset += page.length;
+  }
+}
+
 async function syncDataset(key, data) {
   if (STORAGE_MODE !== 'supabase') return;
 
@@ -268,25 +289,54 @@ async function syncDataset(key, data) {
   if (!table) return;
 
   const rows = Array.isArray(data) ? data : [];
-
-  // V1：以目前應用程式資料快照同步到既有三張 Supabase 表。
-  await supabaseRequest(table, 'DELETE', null, '?id=not.is.null');
-
-  if (!rows.length) {
-    if (key === 'reservations') await saveReservationMetaToSupabase([]);
-    dirtyDatasets.delete(key);
-    return;
-  }
-
   const mapped = key === 'reservations'
     ? rows.map(supabaseRowFromReservation)
     : key === 'customers'
       ? rows.map(supabaseRowFromCustomer)
       : rows.map(supabaseRowFromClosure);
 
-  await supabaseRequest(table, 'POST', mapped);
-  if (key === 'reservations') await saveReservationMetaToSupabase(rows);
-  dirtyDatasets.delete(key);
+  // Read the complete pre-sync snapshot before any destructive write.
+  // If this read fails, leave the remote table untouched.
+  const previousRows = await readSupabaseSnapshot(table);
+  const previousMeta = key === 'reservations'
+    ? await supabaseRequest('app_state', 'GET', null, '?select=*&key=eq.reservation_meta')
+    : null;
+
+  try {
+    await supabaseRequest(table, 'DELETE', null, '?id=not.is.null');
+    if (mapped.length) {
+      await supabaseRequest(table, 'POST', mapped);
+    }
+    if (key === 'reservations') await saveReservationMetaToSupabase(rows);
+    dirtyDatasets.delete(key);
+  } catch (syncError) {
+    const rollbackErrors = [];
+
+    try {
+      await supabaseRequest(table, 'DELETE', null, '?id=not.is.null');
+      if (previousRows.length) await supabaseRequest(table, 'POST', previousRows);
+    } catch (rollbackError) {
+      rollbackErrors.push(`${table}: ${rollbackError.message}`);
+    }
+
+    if (key === 'reservations') {
+      try {
+        await supabaseRequest('app_state', 'DELETE', null, '?key=eq.reservation_meta');
+        if (previousMeta.length) await supabaseRequest('app_state', 'POST', previousMeta);
+      } catch (rollbackError) {
+        rollbackErrors.push(`app_state.reservation_meta: ${rollbackError.message}`);
+      }
+    }
+
+    if (rollbackErrors.length) {
+      throw new Error(
+        `Supabase sync failed: ${syncError.message}; rollback incomplete: ${rollbackErrors.join('; ')}`
+      );
+    }
+    throw new Error(
+      `Supabase sync failed; previous data restored: ${syncError.message}`
+    );
+  }
 }
 
 async function flushStorage() {
@@ -1034,14 +1084,32 @@ const server = http.createServer(async (req, res) => {
           invalidateCalendarCaches();
           return json(res, 200, {ok:true, importedAt:new Date().toISOString(), reservations:reservations.length, customers:customers.length, closures:closures.length});
         } catch (e) {
-          try {
-            await queueWrite(RESERVATIONS_FILE, old.reservations);
-            await queueWrite(CUSTOMERS_FILE, old.customers);
-            await queueWrite(CLOSURES_FILE, old.closures);
-            // 網站設定不在本次匯入範圍，因此不回復／刪除 settings.json。
-          } catch {}
+          const rollbackFailures = [];
+          const rollbackTasks = [
+            ['reservations', RESERVATIONS_FILE, old.reservations],
+            ['customers', CUSTOMERS_FILE, old.customers],
+            ['closures', CLOSURES_FILE, old.closures]
+          ];
+
+          for (const [name, file, data] of rollbackTasks) {
+            try {
+              await queueWrite(file, data);
+            } catch (rollbackError) {
+              rollbackFailures.push(name);
+            }
+          }
+
+          // 網站設定不在本次匯入範圍，因此不回復／刪除 settings.json。
           invalidateCalendarCaches();
-          return json(res, 500, {error:'匯入失敗，已嘗試回復匯入前資料'});
+
+          if (rollbackFailures.length > 0) {
+            return json(res, 500, {
+              error: '匯入失敗，部分資料回復失敗',
+              rollbackFailed: rollbackFailures
+            });
+          }
+
+          return json(res, 500, {error:'匯入失敗，已回復匯入前資料'});
         }
       }
       if (req.method === 'GET' && u.pathname === '/api/admin/closures') {
