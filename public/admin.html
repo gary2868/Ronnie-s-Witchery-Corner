@@ -529,12 +529,12 @@ function taipeiNowKey() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Taipei',
     year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
   }).formatToParts(new Date());
 
   const get = type => Number(parts.find(p => p.type === type)?.value || 0);
 
-  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'));
+  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
 }
 
 /* 預約結束時間（台北牆上時間編碼）；無法解析則回傳 null */
@@ -551,7 +551,8 @@ function isExpiredReservation(x) {
   const endKey = reservationEndKey(x);
   if (endKey === null) return false;
 
-  return endKey < taipeiNowKey();
+  // 結束時間「之後」才算過期：10:00:00 整仍未過期，10:00:01 起為過期
+  return taipeiNowKey() > endKey;
 }
 
 function displayStatus(x) {
@@ -573,14 +574,14 @@ function displayStatus(x) {
  * 將預約日期與開始時間轉成可比較的數值。
  * 有效格式：
  * date：YYYY-MM-DD
- * startTime：H:mm 或 HH:mm
+ * startTime：H:mm、HH:mm 或 HH:mm:ss
  */
 function reservationDateTimeKey(x) {
   const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(
     String(x?.date || '')
   );
-  const t = /^(\d{1,2}):(\d{2})$/.exec(
-    String(x?.startTime || '')
+  const t = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(
+    String(x?.startTime || '').trim()
   );
 
   if (!d || !t) return null;
@@ -590,12 +591,14 @@ function reservationDateTimeKey(x) {
   const day = Number(d[3]);
   const h = Number(t[1]);
   const min = Number(t[2]);
+  const sec = Number(t[3] || 0);
 
   if (
     m < 1 || m > 12 ||
     day < 1 || day > 31 ||
     h < 0 || h > 23 ||
-    min < 0 || min > 59
+    min < 0 || min > 59 ||
+    sec < 0 || sec > 59
   ) {
     return null;
   }
@@ -611,7 +614,7 @@ function reservationDateTimeKey(x) {
     return null;
   }
 
-  return Date.UTC(y, m - 1, day, h, min);
+  return Date.UTC(y, m - 1, day, h, min, sec);
 }
 
 /*
@@ -666,6 +669,10 @@ async function loadAdmin() {
     // 依照三個區塊的順序合併
     list = [...active, ...expired, ...cancelled];
 
+    // 記錄本次畫面上的分類，供自動重新分類檢查使用
+    window.__adminRenderedList = list;
+    window.__adminRenderedExpired = new Set(expired.map(x => x.id));
+
     $('adminContent').innerHTML = list.length
       ? `<div class="admin-list">${list.map(x => {
           const isCancelled = isCancelledReservation(x);
@@ -714,6 +721,28 @@ async function loadAdmin() {
     $('adminContent').innerHTML = `<p>${esc(e.message)}</p>`;
   }
 }
+
+/*
+ * 預約時間經過後自動重新分類（未過期 → 已過期，並隱藏取消按鍵）。
+ * 每 15 秒檢查一次；只有分類真的改變、且沒有展開中的詳細資料時才重新載入，
+ * 避免打斷正在編輯的備註。
+ */
+setInterval(() => {
+  const list = window.__adminRenderedList;
+  const rendered = window.__adminRenderedExpired;
+  if (!Array.isArray(list) || !(rendered instanceof Set)) return;
+
+  const hasOpenDetail = [...document.querySelectorAll('.inlineDetail')]
+    .some(el => el.innerHTML.trim());
+  if (hasOpenDetail) return;
+
+  const changed = list.some(x =>
+    !isCancelledReservation(x) &&
+    isExpiredReservation(x) !== rendered.has(x.id)
+  );
+
+  if (changed) loadAdmin();
+}, 15000);
 
 async function showDetail(id) {
   const existing = $('detail-' + id);
