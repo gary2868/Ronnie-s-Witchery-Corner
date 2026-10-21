@@ -370,6 +370,27 @@ async function notifyWorkerWakeup() {
   try { await fetch(`${INTEGRATION_WORKER_URL}/wake`, { method:'POST', headers:{'X-Worker-Secret':INTEGRATION_WORKER_SECRET} }); } catch {}
 }
 
+/*
+ * 後台操作事件（Google 日曆 / LINE 通知用），由環境變數 INTEGRATION_ADMIN_EVENTS 控制。
+ * 預設關閉：未設定時行為與舊版完全相同。回退方式：移除該環境變數並重新部署即可。
+ * 事件失敗只記錄警告，絕不影響後台操作本身。
+ */
+const INTEGRATION_ADMIN_EVENTS = ['1','on','true'].includes(String(process.env.INTEGRATION_ADMIN_EVENTS || '').toLowerCase());
+async function emitAdminReservationEvent(type, reservation) {
+  if (!INTEGRATION_ADMIN_EVENTS) return;
+  try {
+    await enqueueIntegrationJob(type, reservation);
+    await notifyWorkerWakeup();
+  } catch (error) {
+    console.warn('integration event failed (non-fatal):', type, error.message);
+  }
+}
+async function emitClosureChanged() {
+  if (!INTEGRATION_ADMIN_EVENTS) return;
+  try { await notifyWorkerWakeup(); }
+  catch (error) { console.warn('integration wakeup failed (non-fatal):', error.message); }
+}
+
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
   catch { return fallback; }
@@ -382,8 +403,11 @@ function atomicWrite(file, data) {
   if (dataset) dirtyDatasets.add(dataset);
 }
 function queueWrite(file, data) {
-  writeQueue = writeQueue.then(async () => { atomicWrite(file, data); await flushStorage(); });
-  return writeQueue;
+  const task = writeQueue.then(async () => { atomicWrite(file, data); await flushStorage(); });
+  // 佇列本身吞掉錯誤：一次 Supabase 暫時失敗後，後續寫入仍可繼續（髒資料旗標保留，下次寫入會整批重新同步）。
+  // 呼叫端仍會從回傳的 task 收到這次的錯誤。
+  writeQueue = task.catch(() => {});
+  return task;
 }
 function json(res, status, body, extraHeaders = {}) {
   res.writeHead(status, {
@@ -928,7 +952,7 @@ const server = http.createServer(async (req, res) => {
       if(!item || item.status==='CANCELLED' || !validPhone(phone) || normalizePhone(item.phone)!==phone)
         return json(res,401,{error:'電話與預約資料不符'});
       if(action==='cancel'){
-        item.status='CANCELLED'; item.cancelledAt=new Date().toISOString(); item.updatedAt=item.cancelledAt;
+        markReservationCancelled(item);
         await queueWrite(RESERVATIONS_FILE,reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();
         await enqueueIntegrationJob('reservation.cancelled', item); await notifyWorkerWakeup();
         return json(res,200,{ok:true,reservation:{id:item.id,status:item.status}});
@@ -978,11 +1002,26 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && u.pathname === '/api/integration/export') {
       const secret = req.headers['x-integration-secret'] || '';
-      if (!INTEGRATION_WORKER_SECRET || !safeEqual(secret, INTEGRATION_WORKER_SECRET)) return json(res, 401, {error:'Unauthorized'});
+      if (!INTEGRATION_WORKER_SECRET || !safeEqual(secret, INTEGRATION_WORKER_SECRET)) {
+        console.warn(`[integration] export denied ${new Date().toISOString()}`);   // 只記錄事件，不記錄任何密鑰內容
+        return json(res, 401, {error:'Unauthorized'});
+      }
+      console.log(`[integration] export accessed ${new Date().toISOString()}`);     // 備份資料含個資：留下存取紀錄（不含資料內容）
       const reservations = readJson(RESERVATIONS_FILE, []);
       const customers = readJson(CUSTOMERS_FILE, []);
       const closures = readJson(CLOSURES_FILE, []);
-      return json(res, 200, {backupFormat:'RONNIE_HEALING_SPACE_BACKUP',backupVersion:'V2',exportedAt:new Date().toISOString(),data:{reservations,customers,closures}});
+      // 先組成完整字串再送出，讓回應帶有確定的 Content-Length 與筆數標頭：
+      // Worker 因此可以「不解碼、不解析」直接把位元組串流到 Google Drive（Cloudflare 免費方案每次執行 CPU 只有 10ms），
+      // 並用這些標頭驗證格式與上傳結果。標頭只含數量，不含任何個資。
+      const exportBody = JSON.stringify({backupFormat:'RONNIE_HEALING_SPACE_BACKUP',backupVersion:'V2',exportedAt:new Date().toISOString(),data:{reservations,customers,closures}});
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': Buffer.byteLength(exportBody),
+        'Cache-Control': 'no-store',
+        'X-Export-Format': 'RONNIE_HEALING_SPACE_BACKUP',
+        'X-Export-Counts': `reservations=${reservations.length};customers=${customers.length};closures=${closures.length}`
+      });
+      return res.end(exportBody);
     }
     if (u.pathname.startsWith('/api/admin/')) {
       if (!isAdmin(req)) return json(res, 401, { error: '未登入' });
@@ -1154,13 +1193,13 @@ const server = http.createServer(async (req, res) => {
         ));
         if (overlap) return json(res,409,{error:'這個日期／時段已有公休設定'});
         const item={id:crypto.randomUUID(),date,...(allDay?{}:{startTime,endTime}),createdAt:new Date().toISOString()};
-        closures.push(item); await queueWrite(CLOSURES_FILE,closures); invalidateCalendarCaches(); return json(res,201,{closure:item});
+        closures.push(item); await queueWrite(CLOSURES_FILE,closures); invalidateCalendarCaches(); await emitClosureChanged(); return json(res,201,{closure:item});
       }
       const closureMatch = u.pathname.match(/^\/api\/admin\/closures\/([^/]+)$/);
       if (req.method === 'DELETE' && closureMatch) {
         const id=decodeURIComponent(closureMatch[1]); const closures=readJson(CLOSURES_FILE,[]); const next=closures.filter(x=>x.id!==id);
         if (next.length===closures.length) return json(res,404,{error:'找不到公休設定'});
-        await queueWrite(CLOSURES_FILE,next); invalidateCalendarCaches(); return json(res,200,{ok:true});
+        await queueWrite(CLOSURES_FILE,next); invalidateCalendarCaches(); await emitClosureChanged(); return json(res,200,{ok:true});
       }
       if (req.method === 'GET' && u.pathname === '/api/admin/customers') {
         const customers=readJson(CUSTOMERS_FILE,[]).sort((a,b)=>a.name.localeCompare(b.name,'zh-Hant')); return json(res,200,customers);
@@ -1182,8 +1221,26 @@ const server = http.createServer(async (req, res) => {
         if(data.statusLabel==='Other' && !String(data.otherStatus||'').trim()) return json(res,400,{error:'請輸入 Other 的自定義狀態'});
         const reservations=readJson(RESERVATIONS_FILE,[]); const item=reservations.find(x=>x.id===id);
         if(!item) return json(res,404,{error:'找不到預約'});
-        item.statusLabel=data.statusLabel; item.otherStatus=String(data.otherStatus||'').trim();
-        item.updatedAt=new Date().toISOString(); await queueWrite(RESERVATIONS_FILE,reservations); upsertCustomerFromReservation(item); await flushStorage();
+        const wantsCancel = data.statusLabel==='Cancel';
+        const wasCancelled = item.status==='CANCELLED';
+        let integrationEvent = '';
+        if(wantsCancel){
+          if(!wasCancelled) integrationEvent='reservation.cancelled';
+          // Cancel 與 CANCELLED 同義：同步設定 status，時段隨之釋放
+          markReservationCancelled(item);
+        } else {
+          // 已取消的預約改成其他狀態 = 恢復預約：先確認時段仍可使用
+          if(item.status==='CANCELLED'){
+            const conflict=restoreConflictMessage(item);
+            if(conflict) return json(res,409,{error:conflict});
+            restoreReservation(item);
+            integrationEvent='reservation.updated';
+          }
+          item.statusLabel=data.statusLabel; item.otherStatus=String(data.otherStatus||'').trim();
+          item.updatedAt=new Date().toISOString();
+        }
+        await queueWrite(RESERVATIONS_FILE,reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();
+        if(integrationEvent) await emitAdminReservationEvent(integrationEvent,item);
         return json(res,200,{ok:true,reservation:item});
       }
       const tagMatch = u.pathname.match(/^\/api\/admin\/reservations\/([^/]+)\/tags$/);
@@ -1233,13 +1290,12 @@ const server = http.createServer(async (req, res) => {
         const item = reservations.find(x => x.id === id);
         if (!item) return json(res, 404, { error: '找不到預約' });
         if (item.status === 'CANCELLED') return json(res, 200, { ok: true, reservation: item });
-        item.status = 'CANCELLED';
-        item.cancelledAt = new Date().toISOString();
-        item.updatedAt = item.cancelledAt;
+        markReservationCancelled(item);
         await queueWrite(RESERVATIONS_FILE, reservations);
         invalidateCalendarCaches();
         upsertCustomerFromReservation(item);
         await flushStorage();
+        await emitAdminReservationEvent('reservation.cancelled', item);
         return json(res, 200, { ok: true, reservation: item });
       }
       return json(res, 404, { error: 'Not found' });
@@ -1252,12 +1308,100 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+/*
+ * 取消狀態統一規則：
+ * status === 'CANCELLED' 與 statusLabel === 'Cancel' 代表同一件事。
+ * 設定 Cancel 時兩邊一併同步；已取消的預約改選其他狀態則會恢復預約（見 restoreReservation）。
+ */
+function hasCancelLabel(item) {
+  const label = String(item?.statusLabel || '').trim().toUpperCase();
+  return label === 'CANCEL' || label === 'CANCELLED';
+}
+function markReservationCancelled(item, at = new Date().toISOString()) {
+  item.status = 'CANCELLED';
+  item.statusLabel = 'Cancel';
+  item.otherStatus = '';
+  if (!item.cancelledAt) item.cancelledAt = at;
+  item.updatedAt = at;
+  return item;
+}
+/*
+ * 已取消的預約改選 Finished / No-show / Other 時，視為「恢復預約」：
+ * status 改回 CONFIRMED、清除 cancelledAt，重新占用原本的時段。
+ * 恢復前必須檢查時段：
+ * 1. 與其他未取消預約重疊 → 不可恢復（時段可能已被別人預約）
+ * 2. 預約尚未結束，且時段落在公休/不可預約區間 → 不可恢復
+ *    （已結束的預約只是補記錄，不受公休限制）
+ * 回傳錯誤訊息；可恢復則回傳空字串。
+ */
+function reservationHasEnded(item) {
+  const today = todayISO();
+  if (item.date < today) return true;
+  if (item.date > today) return false;
+  const end = toMinutes(item.endTime);
+  return Number.isFinite(end) && end <= currentTaiwanMinutes();
+}
+function restoreConflictMessage(item) {
+  const slots = Array.isArray(item.slots) && item.slots.length
+    ? item.slots
+    : blockedSlots(item.startTime, item.durationMinutes || 30);
+  const taken = reservationIntervals(item.date, item.id);
+  const overlaps = slots.some(slot => {
+    const a = toMinutes(slot), b = a + CONFIG.slotMinutes;
+    return taken.some(x => a < x.end && b > x.start);
+  });
+  if (overlaps) return '該時段已被其他預約占用，無法恢復此預約';
+  if (!reservationHasEnded(item) && closureOverlaps(item.date, slots)) {
+    return '該時段目前為公休或不可預約時段，無法恢復此預約';
+  }
+  return '';
+}
+function restoreReservation(item, at = new Date().toISOString()) {
+  item.status = 'CONFIRMED';
+  item.cancelledAt = null;
+  item.updatedAt = at;
+  return item;
+}
+/*
+ * 啟動時修正舊資料：
+ * 1. statusLabel 為 Cancel、但 status 仍是 CONFIRMED 的紀錄 → 改為 CANCELLED（時段隨之釋放）
+ * 2. status 為 CANCELLED、但 statusLabel 為空的紀錄 → 補上 Cancel
+ * 回傳修正筆數。
+ */
+async function migrateCancelStatusConsistency() {
+  const reservations = readJson(RESERVATIONS_FILE, []);
+  if (!Array.isArray(reservations)) return 0;
+  const changed = [];
+  for (const item of reservations) {
+    if (!item || typeof item !== 'object') continue;
+    if (item.status !== 'CANCELLED' && hasCancelLabel(item)) {
+      markReservationCancelled(item, item.updatedAt || new Date().toISOString());
+      changed.push(item);
+    } else if (item.status === 'CANCELLED' && !String(item.statusLabel || '').trim()) {
+      item.statusLabel = 'Cancel';
+      changed.push(item);
+    }
+  }
+  if (!changed.length) return 0;
+  await queueWrite(RESERVATIONS_FILE, reservations);
+  invalidateCalendarCaches();
+  for (const item of changed) upsertCustomerFromReservation(item);
+  await flushStorage();
+  return changed.length;
+}
+
 async function startServer() {
   if (STORAGE_MODE === 'supabase') {
     await hydrateFromSupabase();
     console.log('Storage mode: Supabase');
   } else {
     console.log('Storage mode: Local JSON');
+  }
+  try {
+    const fixed = await migrateCancelStatusConsistency();
+    if (fixed) console.log(`Cancel status migration: ${fixed} reservation(s) normalized`);
+  } catch (error) {
+    console.warn('Cancel status migration failed; continuing:', error.message);
   }
   server.listen(CONFIG.port, () => console.log(`Ronnie's Witchery Corner booking system: http://localhost:${CONFIG.port}`));
 }
