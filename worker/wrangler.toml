@@ -1,0 +1,21 @@
+name = "ronnie-integration-worker"
+main = "index.js"
+compatibility_date = "2025-01-01"
+
+# 排程（UTC）：
+#   */5 * * * *   每 5 分鐘：處理 integration_jobs、掃描預約前一天 17:00 的提醒；每 15 分鐘另做日曆對帳
+#   0 19 * * *    每日 03:00（台北時間，= 19:00 UTC）：備份到 Google Drive
+#   0 20 * * *    每日 04:00（台北時間）：備份重試（當天已成功則略過）
+# ⚠️ 修改排程時，請同步修改 worker/index.js 的 CRONS（tests 會比對兩者是否一致）
+[triggers]
+crons = ["*/5 * * * *", "0 19 * * *", "0 20 * * *"]
+
+# 非機密設定（機密請用 `wrangler secret put` 或 Cloudflare 儀表板設定，不要寫在這裡）
+[vars]
+# 所有功能預設關閉；建議順序：dry → on，逐項啟用（見 docs/INTEGRATION_SETUP_AND_ROLLBACK.md）
+FEATURE_ADMIN_NOTIFY = "off"
+FEATURE_REMINDERS = "off"
+FEATURE_CALENDAR = "off"
+FEATURE_BACKUP = "off"
+FEATURE_LINE_BINDING = "off"
+BACKUP_KEEP = "60"

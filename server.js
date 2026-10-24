@@ -371,6 +371,23 @@ async function notifyWorkerWakeup() {
 }
 
 /*
+ * 預約資料已經儲存「之後」才做的附加動作（LINE 綁定碼、整合任務）：失敗不可讓 API 回 500。
+ * 否則客人會以為預約失敗，重試時又被擋成「時段剛剛已被其他使用者預約」，而管理者其實已有這筆預約。
+ * 做法：重試一次（綁定碼 on_conflict=code、任務 dedupe_key 皆可安全重送）；仍失敗就記錄警告並繼續，回傳 null。
+ * 警告格式固定為「[integration] … failed … (non-fatal)」，可在 Render 日誌搜尋。
+ */
+async function bestEffortIntegration(label, fn, retries = 1) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await fn(); }
+    catch (error) {
+      if (attempt < retries) { await new Promise(r => setTimeout(r, 250)); continue; }
+      console.warn(`[integration] ${label} failed after ${attempt + 1} attempt(s) (non-fatal): ${error.message}`);
+      return null;
+    }
+  }
+}
+
+/*
  * 後台操作事件（Google 日曆 / LINE 通知用），由環境變數 INTEGRATION_ADMIN_EVENTS 控制。
  * 預設關閉：未設定時行為與舊版完全相同。回退方式：移除該環境變數並重新部署即可。
  * 事件失敗只記錄警告，絕不影響後台操作本身。
@@ -936,8 +953,9 @@ const server = http.createServer(async (req, res) => {
       invalidateCalendarCaches();
       upsertCustomerFromReservation(item);
       await flushStorage();
-      const lineBindCode = await createLineBindToken(item);
-      await enqueueIntegrationJob('reservation.created', item);
+      // 預約已儲存：以下附加動作失敗不影響結果（綁定碼失敗時回傳 null，客人頁面會自動隱藏綁定提示）
+      const lineBindCode = await bestEffortIntegration('line bind token', () => createLineBindToken(item));
+      await bestEffortIntegration('enqueue reservation.created', () => enqueueIntegrationJob('reservation.created', item));
       await notifyWorkerWakeup();
       return json(res, 201, { reservation: item, officialUrl: CONFIG.officialUrl, lineBindCode });
     }
@@ -954,7 +972,7 @@ const server = http.createServer(async (req, res) => {
       if(action==='cancel'){
         markReservationCancelled(item);
         await queueWrite(RESERVATIONS_FILE,reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();
-        await enqueueIntegrationJob('reservation.cancelled', item); await notifyWorkerWakeup();
+        await bestEffortIntegration('enqueue reservation.cancelled', () => enqueueIntegrationJob('reservation.cancelled', item)); await notifyWorkerWakeup();
         return json(res,200,{ok:true,reservation:{id:item.id,status:item.status}});
       }
       const service=serviceById(data.serviceId);
@@ -973,7 +991,7 @@ const server = http.createServer(async (req, res) => {
       item.endTime=fromMinutes(toMinutes(serviceSlots[serviceSlots.length-1])+CONFIG.slotMinutes);
       item.serviceSlots=serviceSlots; item.slots=blocked; item.updatedAt=new Date().toISOString();
       await queueWrite(RESERVATIONS_FILE,reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();
-      await enqueueIntegrationJob('reservation.updated', item); await notifyWorkerWakeup();
+      await bestEffortIntegration('enqueue reservation.updated', () => enqueueIntegrationJob('reservation.updated', item)); await notifyWorkerWakeup();
       return json(res,200,{ok:true,reservation:item});
     }
     if (req.method === 'POST' && u.pathname === '/api/admin/login') {
@@ -1019,6 +1037,7 @@ const server = http.createServer(async (req, res) => {
         'Content-Length': Buffer.byteLength(exportBody),
         'Cache-Control': 'no-store',
         'X-Export-Format': 'RONNIE_HEALING_SPACE_BACKUP',
+        'X-Export-Bytes': Buffer.byteLength(exportBody),      // 解壓縮後的位元組數；Render 前端代理可能壓縮並移除 Content-Length（實測發生），Worker 以此為準
         'X-Export-Counts': `reservations=${reservations.length};customers=${customers.length};closures=${closures.length}`
       });
       return res.end(exportBody);
