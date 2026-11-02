@@ -165,6 +165,15 @@ function logEvent(deps, event) {
 
 /* ───────────────────────── 資料轉換 ───────────────────────── */
 
+/**
+ * 資料庫 time 欄位回傳 HH:mm:ss（例如 17:30:00），統一為 HH:mm。
+ * 日曆事件的 dateTime 必須是合法的 RFC 3339；若把 ":00" 直接接在 HH:mm:ss 後面會變成
+ * 「17:30:00:00」，Google 會回 400 Bad Request。
+ */
+export function hhmm(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t ?? '').trim());
+  return m ? `${m[1].padStart(2, '0')}:${m[2]}` : (t ?? '');
+}
 export function normalizeReservation(r) {
   if (!r) return null;
   return {
@@ -176,15 +185,15 @@ export function normalizeReservation(r) {
     serviceName: r.serviceName ?? r.service_name ?? '',
     durationMinutes: r.durationMinutes ?? r.duration_minutes ?? 30,
     date: r.date,
-    startTime: r.startTime ?? r.start_time,
-    endTime: r.endTime ?? r.end_time,
+    startTime: hhmm(r.startTime ?? r.start_time),
+    endTime: hhmm(r.endTime ?? r.end_time),
     status: r.status || 'CONFIRMED',
     createdAt: r.createdAt ?? r.created_at,
     updatedAt: r.updatedAt ?? r.updated_at,
   };
 }
 function normalizeClosure(c) {
-  return { id: c.id, date: c.date, startTime: c.startTime ?? c.start_time ?? '', endTime: c.endTime ?? c.end_time ?? '' };
+  return { id: c.id, date: c.date, startTime: hhmm(c.startTime ?? c.start_time ?? ''), endTime: hhmm(c.endTime ?? c.end_time ?? '') };
 }
 function endTimeOf(r) {
   if (r.endTime) return r.endTime;
@@ -317,8 +326,8 @@ export function reservationEvent(r) {
   const body = {
     summary: `${r.name}｜${r.serviceName}`,
     description: [`電話：${r.phone}`, r.lineId ? `LINE ID：${r.lineId}` : '', r.note ? `備註：${r.note}` : '', `預約編號：${r.id}`].filter(Boolean).join('\n'),
-    start: { dateTime: `${r.date}T${r.startTime}:00+08:00`, timeZone: 'Asia/Taipei' },
-    end: { dateTime: `${r.date}T${end}:00+08:00`, timeZone: 'Asia/Taipei' },
+    start: { dateTime: `${r.date}T${hhmm(r.startTime)}:00+08:00`, timeZone: 'Asia/Taipei' },
+    end: { dateTime: `${r.date}T${hhmm(end)}:00+08:00`, timeZone: 'Asia/Taipei' },
     reminders: { useDefault: false },
   };
   const fp = fingerprint(JSON.stringify([body.summary, body.description, body.start, body.end]));
@@ -330,8 +339,8 @@ export function closureEvent(c) {
   const body = { summary: '公休', description: `公休設定 ${c.id}`, reminders: { useDefault: false }, colorId: '8' };
   if (allDay) { body.start = { date: c.date }; body.end = { date: addDays(c.date, 1) }; }
   else {
-    body.start = { dateTime: `${c.date}T${c.startTime}:00+08:00`, timeZone: 'Asia/Taipei' };
-    body.end = { dateTime: `${c.date}T${c.endTime}:00+08:00`, timeZone: 'Asia/Taipei' };
+    body.start = { dateTime: `${c.date}T${hhmm(c.startTime)}:00+08:00`, timeZone: 'Asia/Taipei' };
+    body.end = { dateTime: `${c.date}T${hhmm(c.endTime)}:00+08:00`, timeZone: 'Asia/Taipei' };
   }
   const fp = fingerprint(JSON.stringify([body.summary, body.start, body.end]));
   body.extendedProperties = { private: { ronnie: '1', kind: 'closure', rid: String(c.id), fp } };
