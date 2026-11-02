@@ -20,7 +20,9 @@ const startSrv = async (env = {}) => {
   renderBase = srv.base; return srv;
 };
 beforeEach(() => { m.reset(); flags = {}; worker.clock.cur = null; });
-afterEach(async () => { if (srv) await srv.stop(); srv = null; for (const s of extra) await s.stop(); extra = []; });
+/** 排空背景工作：喚醒 Worker 為非同步，測試結束前必須等它完全結束，否則會滲漏到下一個測試。 */
+const settle = async () => { for (let i = 0; i < 20; i++) { await worker.idle(); await new Promise(r => setTimeout(r, 20)); } };
+afterEach(async () => { await settle(); if (srv) await srv.stop(); srv = null; for (const s of extra) await s.stop(); extra = []; });
 
 async function pickSlot(api) {
   const cfg = (await api('GET', '/api/config', undefined, { auth: false })).json;
@@ -55,9 +57,14 @@ describe('整合測試：真實 server.js（Supabase 模式）+ Worker', () => {
     const created = await book(api, slot, { lineId: 'chen_line' }); assert.equal(created.status, 201);
     const rid = created.json.reservation.id, code = created.json.lineBindCode;
     assert.match(code, /^[0-9A-F]{6}$/);
-    await worker.idle();
+    // 喚醒 Worker 已改為不阻塞客人回應（非同步）。這裡明確等待「管理者通知實際送達」，逾時即失敗，
+    // 而不是依賴 idle() 的時序——否則會掩蓋通知真的遺失的情況。
     const adminMsgs = () => m.S.line.pushes.filter(p => p.to === 'U_ADMIN');
-    assert.equal(adminMsgs().length, 1); assert.match(adminMsgs()[0].text, /新預約[\s\S]*陳小華[\s\S]*0912-345-678/);
+    const deadline = Date.now() + 5000;
+    const done = () => adminMsgs().length >= 1 && events().length >= 1 && T().integration_jobs.length > 0 && T().integration_jobs.every(j => j.status === 'done');
+    while (!done() && Date.now() < deadline) { await worker.idle(); await new Promise(r => setTimeout(r, 25)); }
+    assert.equal(adminMsgs().length, 1, '管理者通知必須在 5 秒內送達（喚醒為非同步，但通知不得遺失）');
+    assert.ok(events().length >= 1, '日曆事件必須在 5 秒內建立（同一個任務的後續步驟）'); assert.match(adminMsgs()[0].text, /新預約[\s\S]*陳小華[\s\S]*0912-345-678/);
     assert.equal(events().length, 1); assert.equal(events()[0].start.dateTime, `${slot.date}T${slot.startTime}:00+08:00`);
     assert.ok(T().integration_jobs.every(j => j.status === 'done'));
 

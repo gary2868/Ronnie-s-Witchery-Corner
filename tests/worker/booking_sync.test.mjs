@@ -55,4 +55,22 @@ describe('預約同步失敗 → 503（短期修法）', () => {
     const r = await api('POST', '/api/reservations', body(slot), { auth: false });
     assert.equal(r.status, 201, JSON.stringify(r.json));
   });
+
+  it('客人表寫入失敗（與預約表並行同步）→ 回 503；且預約表不因此回滾失敗、不建立整合任務', async () => {
+    const slot = await openSlot(12);
+    m.S.fail.push({ re: /^POST customers/, times: 1 });   // 只讓客人表的第一次寫入失敗（回滾用的寫入會成功）
+    const r = await api('POST', '/api/reservations', body(slot), { auth: false });
+    assert.equal(r.status, 503, `應為 503，實際 ${r.status}：${JSON.stringify(r.json)}`);
+    assert.equal(r.json.code, 'SYNC_FAILED');
+    assert.equal(m.S.tables.integration_jobs.length, 0, '同步失敗時不可建立整合任務（否則 Worker 會處理遠端不存在的預約）');
+  });
+
+  it('預約表寫入失敗 → 回 503，且不建立整合任務（任務必須在預約真正寫入遠端之後才建立）', async () => {
+    const slot = await openSlot(15);
+    m.S.fail.push({ re: /^POST reservations/, times: 1 });
+    const r = await api('POST', '/api/reservations', body(slot), { auth: false });
+    assert.equal(r.status, 503, `應為 503，實際 ${r.status}：${JSON.stringify(r.json)}`);
+    assert.equal(m.S.tables.integration_jobs.length, 0);
+    assert.equal(m.S.tables.line_bind_tokens.length, 0, '同步失敗時不可產生綁定碼');
+  });
 });

@@ -11,7 +11,10 @@
 """
 import argparse, concurrent.futures as cf, os, re, shutil, subprocess, sys, tempfile, time
 ROOT=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEST_CMD="node --test{flag} tests/worker/worker.test.mjs tests/worker/integration.test.mjs tests/worker/recycle.test.mjs"
+TEST_CMD="node --test{flag} {files}"
+import glob as _glob
+TEST_FILES=sorted(_glob.glob("tests/worker/*.test.mjs"))
+if not TEST_FILES: sys.exit("找不到 tests/worker/*.test.mjs")
 def node_major():
     try: return int(subprocess.check_output(['node','-p',"process.versions.node.split('.')[0]"],text=True).strip())
     except Exception: sys.exit("找不到 node")
@@ -88,10 +91,13 @@ MUT=[
  ("Q16","大量預約不警告 CPU 風險","worker/index.js","if (desired.size > 300) {","if (false) {"),
  ("Q17","未知 cron 被當成備份執行","worker/index.js","if (CRONS.backups.includes(cron)) {","if (CRONS.backups.includes(cron) || cron !== CRONS.tick) {"),
  # ── 部分成功修正 / Render 代理壓縮（第四輪）──
+ ("V1","客人表失敗被吞掉（flush 不再統一回報錯誤）","server.js","  if (failed) throw failed.reason;",""),
+ ("V2","預約表寫入失敗仍建立整合任務（任務早於遠端寫入）","server.js","      return json(res, 503, {\n          error: '系統目前無法確認您的預約","      await enqueueIntegrationJob('reservation.created', item).catch(() => {});\n        return json(res, 503, {\n          error: '系統目前無法確認您的預約"),
+ ("V3","移除喚醒 Worker（任務只能等 5 分鐘排程）","server.js","      notifyWorkerWakeup().catch(() => {});",""),
  ("R1","附加動作失敗改回丟錯（API 回 500）","server.js","console.warn(`[integration] ${label} failed after ${attempt + 1} attempt(s) (non-fatal): ${error.message}`);\n      return null;","console.warn(`[integration] ${label} failed after ${attempt + 1} attempt(s) (non-fatal): ${error.message}`);\n      throw error;"),
  ("R2","附加動作不重試","server.js","async function bestEffortIntegration(label, fn, retries = 1) {","async function bestEffortIntegration(label, fn, retries = 0) {"),
- ("R3","建立預約的綁定碼失敗仍會讓 API 失敗","server.js","await bestEffortIntegration('line bind token', () => createLineBindToken(item));","await createLineBindToken(item);"),
- ("R4","建立預約的任務失敗仍會讓 API 失敗","server.js","await bestEffortIntegration('enqueue reservation.created', () => enqueueIntegrationJob('reservation.created', item));","await enqueueIntegrationJob('reservation.created', item);"),
+ ("R3","建立預約的綁定碼失敗仍會讓 API 失敗","server.js","bestEffortIntegration('line bind token', () => createLineBindToken(item)),","createLineBindToken(item),"),
+ ("R4","建立預約的任務失敗仍會讓 API 失敗","server.js","bestEffortIntegration('enqueue reservation.created', () => enqueueIntegrationJob('reservation.created', item)),","enqueueIntegrationJob('reservation.created', item),"),
  ("R5","客人取消的任務失敗仍會讓 API 失敗","server.js","await bestEffortIntegration('enqueue reservation.cancelled', () => enqueueIntegrationJob('reservation.cancelled', item));","await enqueueIntegrationJob('reservation.cancelled', item);"),
  ("R6","客人修改的任務失敗仍會讓 API 失敗","server.js","await bestEffortIntegration('enqueue reservation.updated', () => enqueueIntegrationJob('reservation.updated', item));","await enqueueIntegrationJob('reservation.updated', item);"),
  ("R7","匯出不送 X-Export-Bytes（server）","server.js","        'X-Export-Bytes': Buffer.byteLength(exportBody),",""),
@@ -127,7 +133,7 @@ def copy_tree(dst):
 def run_tests(cwd,timeout=240):
     t=time.time()
     try:
-        p=subprocess.run(TEST_CMD.format(flag=FLAG),shell=True,cwd=cwd,capture_output=True,text=True,timeout=timeout); out=p.stdout+p.stderr; rc=p.returncode
+        p=subprocess.run(TEST_CMD.format(flag=FLAG, files=" ".join(TEST_FILES)),shell=True,cwd=cwd,capture_output=True,text=True,timeout=timeout); out=p.stdout+p.stderr; rc=p.returncode
     except subprocess.TimeoutExpired: return dict(rc=124,passed=0,failed=-1,secs=time.time()-t,timeout=True)
     g=lambda k:int((re.search(rf"^(?:# |ℹ ){k} (\d+)",out,re.M) or [0,0])[1])
     return dict(rc=rc,passed=g('pass'),failed=g('fail'),secs=time.time()-t,timeout=False)

@@ -149,12 +149,12 @@ async function saveReservationMetaToSupabase(reservations) {
     if (Array.isArray(item.tags) && item.tags.length) meta.tags = item.tags;
     if (Object.keys(meta).length) value[item.id] = meta;
   }
-  await supabaseRequest('app_state', 'DELETE', null, '?key=eq.reservation_meta');
+  // 單一 upsert 取代 DELETE + POST：同一筆 key 原子覆寫，少一次往返
   await supabaseRequest('app_state', 'POST', {
     key: 'reservation_meta',
     value,
     updated_at: new Date().toISOString()
-  });
+  }, '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
 }
 
 function mergeReservationMeta(reservations, meta) {
@@ -306,10 +306,12 @@ async function syncDataset(key, data) {
 
   // Read the complete pre-sync snapshot before any destructive write.
   // If this read fails, leave the remote table untouched.
-  const previousRows = await readSupabaseSnapshot(table);
-  const previousMeta = key === 'reservations'
-    ? await supabaseRequest('app_state', 'GET', null, '?select=*&key=eq.reservation_meta')
-    : null;
+  const [previousRows, previousMeta] = await Promise.all([
+    readSupabaseSnapshot(table),
+    key === 'reservations'
+      ? supabaseRequest('app_state', 'GET', null, '?select=*&key=eq.reservation_meta')
+      : Promise.resolve(null),
+  ]);
 
   try {
     await supabaseRequest(table, 'DELETE', null, '?id=not.is.null');
@@ -352,13 +354,15 @@ async function flushStorage() {
   if (STORAGE_MODE !== 'supabase') return;
 
   const keys = [...dirtyDatasets];
-  for (const key of keys) {
+  // 不同資料表彼此獨立，並行同步。用 allSettled：即使其中一張失敗，另一張仍會完成，最後才統一回報錯誤。
+  const results = await Promise.allSettled(keys.map(key => {
     const file = key === 'reservations' ? RESERVATIONS_FILE
       : key === 'customers' ? CUSTOMERS_FILE
       : CLOSURES_FILE;
-
-    await syncDataset(key, readJson(file, []));
-  }
+    return syncDataset(key, readJson(file, []));
+  }));
+  const failed = results.find(r => r.status === 'rejected');
+  if (failed) throw failed.reason;
 }
 async function enqueueIntegrationJob(type, reservation) {
   if (STORAGE_MODE !== 'supabase') return;
@@ -1099,6 +1103,8 @@ const server = http.createServer(async (req, res) => {
         serviceSlots, slots: blocked, status: 'CONFIRMED', createdAt: now, updatedAt: now, cancelledAt: null
       };
       reservations.push(item);
+      // 先更新客人檔（標記為待同步），再由同一次 flush 並行同步預約與客人兩張表，而不是一張接一張
+      upsertCustomerFromReservation(item);
       try {
         // queueWrite 內含 flushStorage（寫入 Supabase）。同步失敗會從這裡丟出，必須包在 try 內。
         await queueWrite(RESERVATIONS_FILE, reservations);
@@ -1112,10 +1118,13 @@ const server = http.createServer(async (req, res) => {
         });
       }
       invalidateCalendarCaches();
-      upsertCustomerFromReservation(item);
-      await flushStorage();
+      await flushStorage();   // 通常已在上面完成（待同步清單為空，不發出請求）；保留作為殘留重試
       // 預約已儲存：以下附加動作失敗不影響結果（綁定碼失敗時回傳 null，客人頁面會自動隱藏綁定提示）
-      const lineBindCode = await bestEffortIntegration('line bind token', () => createLineBindToken(item));
+      // 綁定碼與整合任務彼此獨立，並行寫入（原本依序等待，各多一次網路往返）
+      const [lineBindCode] = await Promise.all([
+        bestEffortIntegration('line bind token', () => createLineBindToken(item)),
+        bestEffortIntegration('enqueue reservation.created', () => enqueueIntegrationJob('reservation.created', item)),
+      ]);
       if (lineBindCode) {
         // 綁定碼跟著預約走：存在 app_state.reservation_meta（不改 reservations 的 19 欄），供查詢頁與後台顯示
         try {
@@ -1125,8 +1134,8 @@ const server = http.createServer(async (req, res) => {
             '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
         } catch (error) { console.warn('[integration] store bind code in meta failed (non-fatal):', error.message); }
       }
-      await bestEffortIntegration('enqueue reservation.created', () => enqueueIntegrationJob('reservation.created', item));
-      await notifyWorkerWakeup();
+      // 喚醒 Worker 只是加速：任務已寫入資料庫，Worker 排程最遲 5 分鐘內會撿到。不阻塞客人的回應。
+      notifyWorkerWakeup().catch(() => {});
       return json(res, 201, { reservation: item, officialUrl: CONFIG.officialUrl, lineBindCode });
     }
     const manageMatch = u.pathname.match(/^\/api\/manage\/reservations\/([^/]+)\/(cancel|update)$/);
