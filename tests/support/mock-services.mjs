@@ -113,7 +113,8 @@ export async function startMocks(port = 0) {
           const dup = S.tables[table].find(x => uniq.some(k => r[k] !== undefined && x[k] === r[k]));
           if (dup) {
             if (prefer.includes('ignore-duplicates')) continue;
-            if (oc) { Object.assign(dup, r); out.push(dup); continue; }
+            // 與真實 PostgREST 一致：on_conflict 必須搭配 Prefer: resolution=merge-duplicates 才會覆寫，否則是重複鍵錯誤
+            if (oc && prefer.includes('merge-duplicates')) { Object.assign(dup, r); out.push(dup); continue; }
             return send(res, 409, { code: '23505', message: 'duplicate key' });
           }
           S.tables[table].push(JSON.parse(JSON.stringify(r))); out.push(r);
