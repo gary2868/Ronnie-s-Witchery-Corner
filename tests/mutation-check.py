@@ -3,7 +3,7 @@
 
 - 每個突變都在「獨立的暫存副本」中執行（不會動到你的原始檔案），並可平行執行。
 - 用法（於專案根目錄）：
-    python3 tests/mutation-check.py              # 全部（76 項，約 9~10 分鐘；可用 --only 只跑部分）
+    python3 tests/mutation-check.py              # 全部（96 項，約 25 分鐘；可用 --only 只跑部分）
     python3 tests/mutation-check.py -j 2         # 平行數
     python3 tests/mutation-check.py --only M1,M5 # 只跑指定突變
     python3 tests/mutation-check.py --list
@@ -11,7 +11,7 @@
 """
 import argparse, concurrent.futures as cf, os, re, shutil, subprocess, sys, tempfile, time
 ROOT=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEST_CMD="node --test{flag} tests/worker/worker.test.mjs tests/worker/integration.test.mjs"
+TEST_CMD="node --test{flag} tests/worker/worker.test.mjs tests/worker/integration.test.mjs tests/worker/recycle.test.mjs"
 def node_major():
     try: return int(subprocess.check_output(['node','-p',"process.versions.node.split('.')[0]"],text=True).strip())
     except Exception: sys.exit("找不到 node")
@@ -98,6 +98,28 @@ MUT=[
  ("R8","Worker 不使用 X-Export-Bytes（只看 Content-Length）","worker/index.js","const len = Number.isFinite(hdrNum('x-export-bytes')) && hdrNum('x-export-bytes') > 0 ? hdrNum('x-export-bytes') : hdrNum('content-length');","const len = hdrNum('content-length');"),
  ("R9","Worker 不要求不壓縮","worker/index.js","'X-Integration-Secret': env.INTEGRATION_WORKER_SECRET, 'Accept-Encoding': 'identity' },","'X-Integration-Secret': env.INTEGRATION_WORKER_SECRET },"),
  ("R10","Worker 不檢查回應是否被壓縮","worker/index.js","const identityBody = enc_ === '' || enc_ === 'identity';","const identityBody = true;"),
+ # ── 管理端新增／軟刪除（資源回收桶）──
+ ("S1","刪除預約不檢查『仍有效且未結束』","server.js","  if (isActiveFutureReservation(r)) {\n    return { status: 409, body: { error: '此預約仍有效且尚未結束","  if (false) {\n    return { status: 409, body: { error: '此預約仍有效且尚未結束"),
+ ("S2","先刪除、後寫回收桶（失敗時會遺失資料）","server.js","  bin.push(entry);\n  await saveRecycleBin(bin);                                         // ① 先進回收桶（失敗 → 不刪）\n  await queueWrite(RESERVATIONS_FILE, readJson(RESERVATIONS_FILE, []).filter(x => x.id !== id));   // ② 再從正式資料移除","  bin.push(entry);\n  await queueWrite(RESERVATIONS_FILE, readJson(RESERVATIONS_FILE, []).filter(x => x.id !== id));\n  await saveRecycleBin(bin);"),
+ ("S3","刪除預約不同步移除客人歷史","server.js","  if (stripHistory(customers, [id])) atomicWrite(CUSTOMERS_FILE, customers);                      // ③ 同步移除客人歷史",""),
+ ("S4","刪除客人不檢查未來有效預約","server.js","  if (active.length) {\n    return { status: 409, body: { error: `此客人還有","  if (false) {\n    return { status: 409, body: { error: `此客人還有"),
+ ("S5","刪除客人不連同其預約一起移除","server.js","  if (mine.length) { await queueWrite(RESERVATIONS_FILE, readJson(RESERVATIONS_FILE, []).filter(x => !ids.has(x.id))); invalidateCalendarCaches(); }","  if (false) { }"),
+ ("S6","還原預約不重建客人歷史","server.js","    upsertCustomerFromReservation(r);                                // 重建客人歷史（客人若已不存在會一併建立）\n",""),
+ ("S7","還原預約不檢查是否已存在","server.js","    if (liveIds.has(r.id)) return { status: 409, body: { error: '這筆預約已存在於正式資料中","    if (false) return { status: 409, body: { error: '這筆預約已存在於正式資料中"),
+ ("S8","管理員新增預約不擋公休","server.js","        if (isClosed(data.date)) return json(res, 400, { error: '該日期為公休，無法新增預約', code: 'CLOSED' });\n",""),
+ ("S9","管理員新增預約不擋時段衝突","server.js","        if (!slotsAvailable(data.date, blocked)) return json(res, 409, { error: '這個時段已被其他預約占用', code: 'CONFLICT' });\n",""),
+ ("S10","新增客人不擋重複","server.js","        if (dup) return json(res, 409, { error: '已有相同姓名與生日的客人檔案', code: 'DUPLICATE', customerId: dup.id });\n",""),
+ ("S11","新增客人不檢查回收桶","server.js","        if (inBin) return json(res, 409, { error: '回收桶中已有相同姓名與生日的客人，請從回收桶還原', code: 'IN_RECYCLE_BIN', binId: inBin.id });\n",""),
+ ("S12","客人檔案刪除歷史不驗證歸屬","server.js","if (!cust || !(Array.isArray(cust.history) ? cust.history : []).some(h => h.reservationId === rid)) return json(res, 404","if (!cust) return json(res, 404"),
+ ("S13","永久移除不真的移除","server.js","        await saveRecycleBin(bin.filter(x => x.id !== id));\n        console.log(`[admin] recycle bin ${id} permanently removed`);","        console.log(`[admin] recycle bin ${id} permanently removed`);"),
+ ("S14","還原後不移出回收桶","server.js","  await saveRecycleBin(bin.filter(x => x.id !== binId));             // 先還原、後移出回收桶（中途失敗最多是兩邊都有，不會遺失）\n",""),
+ ("S15","還原客人時一律新增（造成重複客人）","server.js","    if (!customers.some(x => samePersonRecord(x, entry.customer))) { customers.push(entry.customer);","    if (true) { customers.push(entry.customer);"),
+ ("S16","回收桶覆寫缺少 merge-duplicates（真實 PostgREST 第二次寫入會失敗）","server.js","      '?on_conflict=key', 'resolution=merge-duplicates,return=representation');","      '?on_conflict=key', 'return=representation');"),
+ ("S17","讀不到回收桶時照樣刪除","server.js","  const bin = await loadRecycleBin();                               // 讀不到回收桶 → 丟錯，什麼都不會動","  const bin = await loadRecycleBin().catch(() => []);"),
+ # ── 電話鍵防護 ──
+ ("T1","綁定時不檢查電話是否可用（會產生共用的空鍵綁定）","worker/index.js","  if (!phoneKey) {\n    logEvent(deps, { task: 'line_bind_rejected'","  if (false) {\n    logEvent(deps, { task: 'line_bind_rejected'"),
+ ("T2","提醒時不檢查電話是否可用（可能送給不相干的人）","worker/index.js","  if (!key) return 'skipped:no_usable_phone';\n",""),
+ ("T3","電話最少位數改成 0","worker/index.js","const MIN_PHONE_DIGITS = 7;","const MIN_PHONE_DIGITS = 0;"),
 ]
 
 def copy_tree(dst):

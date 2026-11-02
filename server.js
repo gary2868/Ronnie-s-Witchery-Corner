@@ -40,6 +40,7 @@ if (fs.existsSync(SETTINGS_FILE)) {
 const RESERVATIONS_FILE = path.join(DATA_DIR, 'reservations.json');
 const CLOSURES_FILE = path.join(DATA_DIR, 'closures.json');
 const CUSTOMERS_FILE = path.join(DATA_DIR, 'customers.json');
+const RECYCLE_FILE = path.join(DATA_DIR, 'recycle_bin.json');   // 資源回收桶（本機模式）；Supabase 模式存在 app_state 的 recycle_bin 一列
 fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(RESERVATIONS_FILE)) fs.writeFileSync(RESERVATIONS_FILE, '[]', 'utf8');
 if (!fs.existsSync(CLOSURES_FILE)) fs.writeFileSync(CLOSURES_FILE, '[]', 'utf8');
@@ -69,11 +70,11 @@ function assertSupabaseConfig() {
     throw new Error('STORAGE_MODE=supabase 時必須設定 SUPABASE_URL 與 SUPABASE_SERVICE_ROLE_KEY');
   }
 }
-async function supabaseRequest(table, method='GET', body=null, query='') {
+async function supabaseRequest(table, method='GET', body=null, query='', prefer='return=representation') {
   assertSupabaseConfig();
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
     method,
-    headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+    headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json', Prefer: prefer },
     body: body == null ? undefined : JSON.stringify(body)
   });
   const text = await r.text();
@@ -116,6 +117,14 @@ function normalizeRemoteDataset(key, value) {
   });
   if (key === 'closures') return value.map(c => ({...c, startTime:c.startTime ?? c.start_time, endTime:c.endTime ?? c.end_time, createdAt:c.createdAt ?? c.created_at}));
   return value;
+}
+/** 已完成 LINE 綁定的預約 id 集合（讀 app_state 的 line_bind:* 列）。讀取失敗回傳空集合，不影響查詢。 */
+async function loadBoundReservationIds() {
+  if (STORAGE_MODE !== 'supabase') return new Set();
+  try {
+    const rows = await supabaseRequest('app_state', 'GET', null, '?select=value&key=like.line_bind:*');
+    return new Set((rows || []).map(r => r && r.value && r.value.reservationId).filter(Boolean));
+  } catch (error) { console.warn('Bind status unavailable; continuing:', error.message); return new Set(); }
 }
 async function loadReservationMetaFromSupabase() {
   if (STORAGE_MODE !== 'supabase') return {};
@@ -741,6 +750,143 @@ function upsertCustomerFromReservation(item) {
   atomicWrite(CUSTOMERS_FILE, customers);
   return matches[0];
 }
+/* ───────────────────────── 資源回收桶（軟刪除）─────────────────────────
+ * 設計：刪除 = 「先把完整快照存進回收桶，成功後才從正式資料移除」。
+ *  - 不更動資料庫結構（回收桶存在 app_state 的 recycle_bin 一列；本機模式存成 data/recycle_bin.json）。
+ *  - 預約一旦不在正式資料中，時段釋放、日曆事件移除、提醒略過都會自然成立（Worker 不需要修改）。
+ *  - 順序保證：寫入回收桶失敗 → 什麼都不會被刪。
+ *  - 預約 ↔ 客人檔案歷史紀錄雙向同步：刪預約會同時移除客人歷史；從客人檔案刪某筆歷史 = 刪該預約。
+ */
+async function loadRecycleBin() {
+  if (STORAGE_MODE === 'supabase') {
+    const rows = await supabaseRequest('app_state', 'GET', null, '?select=value&key=eq.recycle_bin&limit=1');
+    const v = rows && rows[0] && rows[0].value;
+    return Array.isArray(v && v.items) ? v.items : [];
+  }
+  const v = readJson(RECYCLE_FILE, []);
+  return Array.isArray(v) ? v : [];
+}
+async function saveRecycleBin(items) {
+  if (STORAGE_MODE === 'supabase') {
+    await supabaseRequest('app_state', 'POST', { key: 'recycle_bin', value: { items }, updated_at: new Date().toISOString() },
+      '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
+  } else {
+    atomicWrite(RECYCLE_FILE, items);
+  }
+}
+const isActiveFutureReservation = r => r.status !== 'CANCELLED' && !reservationHasEnded(r);
+const briefReservation = r => ({ id: r.id, name: r.name, date: r.date, startTime: r.startTime, endTime: r.endTime, serviceName: r.serviceName, status: r.status, statusLabel: r.statusLabel || '' });
+const samePersonRecord = (c, p) => (c.id && p.id && c.id === p.id) ||
+  (String(c.name || '').trim() === String(p.name || '').trim() &&
+   String(c.birthDate || c.birth_date || '').trim() === String(p.birthDate || p.birth_date || '').trim());
+
+function customerReservations(customer, reservations) {
+  const ids = new Set((Array.isArray(customer.history) ? customer.history : []).map(h => h.reservationId));
+  return reservations.filter(r => ids.has(r.id) || (r.customerId && r.customerId === customer.id) ||
+    (String(r.name || '').trim() === String(customer.name || '').trim() &&
+     String(r.birthDate || r.birth_date || '').trim() === String(customer.birthDate || customer.birth_date || '').trim()));
+}
+/** 從所有客人檔案移除指定預約的歷史紀錄；回傳是否有變動 */
+function stripHistory(customers, reservationIds) {
+  const ids = new Set(reservationIds);
+  let changed = false;
+  for (const c of customers) {
+    if (!Array.isArray(c.history)) continue;
+    const next = c.history.filter(h => !ids.has(h.reservationId));
+    if (next.length !== c.history.length) {
+      c.history = next; c.updatedAt = new Date().toISOString();
+      c.tags = [...new Set(next.flatMap(x => Array.isArray(x.tags) ? x.tags : []))].slice(0, 30);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+async function softDeleteReservation(id) {
+  const bin = await loadRecycleBin();                               // 讀不到回收桶 → 丟錯，什麼都不會動
+  const r = readJson(RESERVATIONS_FILE, []).find(x => x.id === id);
+  if (!r) return { status: 404, body: { error: '找不到這筆預約' } };
+  if (isActiveFutureReservation(r)) {
+    return { status: 409, body: { error: '此預約仍有效且尚未結束，請先取消預約再刪除', code: 'ACTIVE_FUTURE' } };
+  }
+  const entry = { id: crypto.randomUUID(), type: 'reservation', deletedAt: new Date().toISOString(), summary: briefReservation(r), reservation: r };
+  bin.push(entry);
+  await saveRecycleBin(bin);                                         // ① 先進回收桶（失敗 → 不刪）
+  await queueWrite(RESERVATIONS_FILE, readJson(RESERVATIONS_FILE, []).filter(x => x.id !== id));   // ② 再從正式資料移除
+  invalidateCalendarCaches();
+  const customers = readJson(CUSTOMERS_FILE, []);
+  if (stripHistory(customers, [id])) atomicWrite(CUSTOMERS_FILE, customers);                      // ③ 同步移除客人歷史
+  await flushStorage();
+  await emitClosureChanged();                                        // 喚醒 Worker，讓日曆對帳盡快移除事件
+  console.log(`[admin] reservation ${id} moved to recycle bin (${entry.id})`);
+  return { status: 200, body: { ok: true, binId: entry.id } };
+}
+
+async function softDeleteCustomer(cid) {
+  const bin = await loadRecycleBin();
+  const customers = readJson(CUSTOMERS_FILE, []);
+  const c = customers.find(x => x.id === cid);
+  if (!c) return { status: 404, body: { error: '找不到這位客人' } };
+  const mine = customerReservations(c, readJson(RESERVATIONS_FILE, []));
+  const active = mine.filter(isActiveFutureReservation);
+  if (active.length) {
+    return { status: 409, body: { error: `此客人還有 ${active.length} 筆有效且尚未結束的預約，請先取消或處理後再刪除`, code: 'HAS_ACTIVE_FUTURE', reservations: active.map(briefReservation) } };
+  }
+  const entry = {
+    id: crypto.randomUUID(), type: 'customer', deletedAt: new Date().toISOString(),
+    summary: { name: c.name, birthDate: c.birthDate || '', phone: c.phone || '', reservationCount: mine.length },
+    customer: c, reservations: mine,
+  };
+  bin.push(entry);
+  await saveRecycleBin(bin);                                         // ① 先進回收桶
+  const ids = new Set(mine.map(r => r.id));
+  if (mine.length) { await queueWrite(RESERVATIONS_FILE, readJson(RESERVATIONS_FILE, []).filter(x => !ids.has(x.id))); invalidateCalendarCaches(); }
+  const fresh = readJson(CUSTOMERS_FILE, []).filter(x => x.id !== cid);
+  stripHistory(fresh, [...ids]);
+  atomicWrite(CUSTOMERS_FILE, fresh);
+  await flushStorage();
+  await emitClosureChanged();
+  console.log(`[admin] customer ${cid} moved to recycle bin (${entry.id}) with ${mine.length} reservation(s)`);
+  return { status: 200, body: { ok: true, binId: entry.id, reservationsDeleted: mine.length } };
+}
+
+async function restoreFromRecycleBin(binId) {
+  const bin = await loadRecycleBin();
+  const entry = bin.find(x => x.id === binId);
+  if (!entry) return { status: 404, body: { error: '回收桶中找不到這個項目' } };
+  const live = readJson(RESERVATIONS_FILE, []);
+  const liveIds = new Set(live.map(x => x.id));
+
+  if (entry.type === 'reservation') {
+    const r = entry.reservation;
+    if (liveIds.has(r.id)) return { status: 409, body: { error: '這筆預約已存在於正式資料中，無法還原（可從回收桶永久移除這個項目）', code: 'ALREADY_EXISTS' } };
+    if (isActiveFutureReservation(r)) {
+      const conflict = restoreConflictMessage(r);
+      if (conflict) return { status: 409, body: { error: conflict, code: 'CONFLICT' } };
+    }
+    await queueWrite(RESERVATIONS_FILE, [...live, r]);
+    invalidateCalendarCaches();
+    upsertCustomerFromReservation(r);                                // 重建客人歷史（客人若已不存在會一併建立）
+    await flushStorage();
+  } else if (entry.type === 'customer') {
+    const toRestore = entry.reservations.filter(r => !liveIds.has(r.id));
+    for (const r of toRestore) {
+      if (isActiveFutureReservation(r)) { const m = restoreConflictMessage(r); if (m) return { status: 409, body: { error: m, code: 'CONFLICT' } }; }
+    }
+    const customers = readJson(CUSTOMERS_FILE, []);
+    if (!customers.some(x => samePersonRecord(x, entry.customer))) { customers.push(entry.customer); atomicWrite(CUSTOMERS_FILE, customers); }
+    if (toRestore.length) { await queueWrite(RESERVATIONS_FILE, [...live, ...toRestore]); invalidateCalendarCaches(); }
+    for (const r of toRestore) upsertCustomerFromReservation(r);     // 與（可能已重新建立的）同一位客人合併，不會產生重複檔案
+    await flushStorage();
+  } else {
+    return { status: 400, body: { error: '未知的回收桶項目類型' } };
+  }
+  await saveRecycleBin(bin.filter(x => x.id !== binId));             // 先還原、後移出回收桶（中途失敗最多是兩邊都有，不會遺失）
+  await emitClosureChanged();
+  console.log(`[admin] recycle bin ${binId} (${entry.type}) restored`);
+  return { status: 200, body: { ok: true, type: entry.type } };
+}
+
 function syncPersonTags(name, birthDate, tags) {
   const clean=[...new Set((Array.isArray(tags)?tags:[]).map(x=>String(x).trim()).filter(Boolean))].slice(0,30);
   const reservations=readJson(RESERVATIONS_FILE,[]);
@@ -904,7 +1050,11 @@ const server = http.createServer(async (req, res) => {
         .filter(x=>normalizePhone(x.phone)===phone && x.status!=='CANCELLED' && x.date >= today)
         .sort((a,b)=>`${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`));
       if(!reservations.length) return json(res,404,{error:'找不到此電話的預約'});
+      const metaAll = await loadReservationMetaFromSupabase();
+      const boundSet = await loadBoundReservationIds();
       return json(res,200,{reservations:reservations.map(item=>({
+        lineBindCode: (item.status==='CANCELLED' || reservationHasEnded(item)) ? null : ((metaAll[item.id] || {}).lineBindCode || null),
+        lineBound: boundSet.has(item.id),
         id:item.id,name:item.name,birthDate:item.birthDate,phone:item.phone||'',
         serviceId:item.serviceId,serviceName:item.serviceName,durationMinutes:item.durationMinutes,
         date:item.date,startTime:item.startTime,endTime:item.endTime,status:item.status,note:item.note||''
@@ -949,12 +1099,32 @@ const server = http.createServer(async (req, res) => {
         serviceSlots, slots: blocked, status: 'CONFIRMED', createdAt: now, updatedAt: now, cancelledAt: null
       };
       reservations.push(item);
-      await queueWrite(RESERVATIONS_FILE, reservations);
+      try {
+        // queueWrite 內含 flushStorage（寫入 Supabase）。同步失敗會從這裡丟出，必須包在 try 內。
+        await queueWrite(RESERVATIONS_FILE, reservations);
+      } catch (syncError) {
+        // 短期修法：資料庫同步失敗 → 不回 500（客人會誤以為系統壞掉），改回 503 並明確告知「預約未確認」。
+        // 注意：本機檔案已寫入（atomicWrite 先於 flushStorage），所以這筆可能仍存在；客人重試若遇到「時段已占用」，代表上一筆其實已成立。
+        console.warn('[booking] supabase sync failed; booking not confirmed to client:', syncError.message);
+        return json(res, 503, {
+          error: '系統目前無法確認您的預約，請稍後再試。若稍後重試時顯示此時段已被預約，請聯絡店家確認是否已成立。',
+          code: 'SYNC_FAILED'
+        });
+      }
       invalidateCalendarCaches();
       upsertCustomerFromReservation(item);
       await flushStorage();
       // 預約已儲存：以下附加動作失敗不影響結果（綁定碼失敗時回傳 null，客人頁面會自動隱藏綁定提示）
       const lineBindCode = await bestEffortIntegration('line bind token', () => createLineBindToken(item));
+      if (lineBindCode) {
+        // 綁定碼跟著預約走：存在 app_state.reservation_meta（不改 reservations 的 19 欄），供查詢頁與後台顯示
+        try {
+          const metaNow = await loadReservationMetaFromSupabase();
+          metaNow[item.id] = { ...(metaNow[item.id] || {}), lineBindCode, lineBindCodeAt: new Date().toISOString() };
+          await supabaseRequest('app_state', 'POST', { key: 'reservation_meta', value: metaNow, updated_at: new Date().toISOString() },
+            '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
+        } catch (error) { console.warn('[integration] store bind code in meta failed (non-fatal):', error.message); }
+      }
       await bestEffortIntegration('enqueue reservation.created', () => enqueueIntegrationJob('reservation.created', item));
       await notifyWorkerWakeup();
       return json(res, 201, { reservation: item, officialUrl: CONFIG.officialUrl, lineBindCode });
@@ -1220,6 +1390,109 @@ const server = http.createServer(async (req, res) => {
         if (next.length===closures.length) return json(res,404,{error:'找不到公休設定'});
         await queueWrite(CLOSURES_FILE,next); invalidateCalendarCaches(); await emitClosureChanged(); return json(res,200,{ok:true});
       }
+      // ───── 管理端：新增 / 刪除（軟刪除）預約與客人檔案 ─────
+      if (req.method === 'POST' && u.pathname === '/api/admin/reservations') {
+        const data = await readBody(req);
+        let name, birthDate, phone, customerId = null;
+        if (data.customerId) {
+          const c = readJson(CUSTOMERS_FILE, []).find(x => x.id === data.customerId);
+          if (!c) return json(res, 404, { error: '找不到這位客人' });
+          name = normalizeName(c.name); birthDate = normalizeBirthDate(c.birthDate || c.birth_date); phone = normalizePhone(c.phone); customerId = c.id;
+        } else {
+          name = normalizeName(data.name); birthDate = normalizeBirthDate(data.birthDate); phone = normalizePhone(data.phone);
+        }
+        const note = normalizeNote(data.note);
+        const service = serviceById(data.serviceId);
+        const missing = [];
+        if (!validDate(data.date)) missing.push('日期');
+        if (!service) missing.push('服務項目');
+        if (!name) missing.push('姓名');
+        if (!validBirthDate(birthDate)) missing.push('西元生日');
+        if (!validPhone(phone)) missing.push('電話');
+        if (typeof data.startTime !== 'string' || !data.startTime) missing.push('開始時間');
+        if (missing.length) return json(res, 400, { error: `預約資料不完整：${missing.join('、')}` });
+        // 管理員新增：公休、時段衝突、營業時段照一般規則擋下；「當日／過去／最遠預約日」是給客人自助預約的限制，管理員不受限
+        if (isClosed(data.date)) return json(res, 400, { error: '該日期為公休，無法新增預約', code: 'CLOSED' });
+        const serviceSlots = expectedSlots(data.startTime, service.durationMinutes);
+        const blocked = blockedSlots(data.startTime, service.durationMinutes);
+        if (!new Set(baseSlotsForDate(data.date)).has(data.startTime) || !isContiguous(serviceSlots)) return json(res, 400, { error: '所選開始時間不在營業時段內', code: 'OUT_OF_HOURS' });
+        if (!slotsAvailable(data.date, blocked)) return json(res, 409, { error: '這個時段已被其他預約占用', code: 'CONFLICT' });
+        const reservations = readJson(RESERVATIONS_FILE, []);
+        const now = new Date().toISOString();
+        const item = {
+          id: crypto.randomUUID(), bookingCode: generateBookingCode(reservations),
+          name, birthDate, phone, note,
+          serviceId: service.id, serviceName: service.name, durationMinutes: service.durationMinutes,
+          date: data.date, startTime: serviceSlots[0], endTime: fromMinutes(toMinutes(serviceSlots[serviceSlots.length - 1]) + CONFIG.slotMinutes),
+          serviceSlots, slots: blocked, status: 'CONFIRMED', createdAt: now, updatedAt: now, cancelledAt: null
+        };
+        if (customerId) item.customerId = customerId;
+        reservations.push(item);
+        await queueWrite(RESERVATIONS_FILE, reservations);
+        invalidateCalendarCaches();
+        upsertCustomerFromReservation(item);
+        await flushStorage();
+        await emitClosureChanged();                                  // 只喚醒 Worker 對帳日曆；管理員自己新增，不發 LINE 通知
+        return json(res, 201, { reservation: item });
+      }
+      const adminResDel = u.pathname.match(/^\/api\/admin\/reservations\/([^/]+)$/);
+      if (req.method === 'DELETE' && adminResDel) {
+        const out = await softDeleteReservation(decodeURIComponent(adminResDel[1]));
+        return json(res, out.status, out.body);
+      }
+      if (req.method === 'POST' && u.pathname === '/api/admin/customers') {
+        const data = await readBody(req);
+        const name = normalizeName(data.name), birthDate = normalizeBirthDate(data.birthDate), phone = normalizePhone(data.phone), lineId = normalizeLineId(data.lineId);
+        const missing = [];
+        if (!name) missing.push('姓名');
+        if (!validBirthDate(birthDate)) missing.push('西元生日');
+        if (!validPhone(phone)) missing.push('電話');
+        if (missing.length) return json(res, 400, { error: `客人資料不完整：${missing.join('、')}` });
+        const customers = readJson(CUSTOMERS_FILE, []);
+        const dup = customers.find(c => samePersonRecord(c, { name, birthDate }));
+        if (dup) return json(res, 409, { error: '已有相同姓名與生日的客人檔案', code: 'DUPLICATE', customerId: dup.id });
+        const inBin = (await loadRecycleBin()).find(e => e.type === 'customer' && samePersonRecord(e.customer, { name, birthDate }));
+        if (inBin) return json(res, 409, { error: '回收桶中已有相同姓名與生日的客人，請從回收桶還原', code: 'IN_RECYCLE_BIN', binId: inBin.id });
+        const now = new Date().toISOString();
+        const customer = { id: crypto.randomUUID(), name, birthDate, phone, lineId, createdAt: now, updatedAt: now, history: [], tags: [] };
+        customers.push(customer);
+        atomicWrite(CUSTOMERS_FILE, customers);
+        await flushStorage();
+        return json(res, 201, { customer });
+      }
+      const adminHistDel = u.pathname.match(/^\/api\/admin\/customers\/([^/]+)\/history\/([^/]+)$/);
+      if (req.method === 'DELETE' && adminHistDel) {
+        // 從客人檔案刪除某筆歷史 = 刪除對應的預約（雙向同步只有這一條邏輯路徑）
+        const cust = readJson(CUSTOMERS_FILE, []).find(x => x.id === decodeURIComponent(adminHistDel[1]));
+        const rid = decodeURIComponent(adminHistDel[2]);
+        if (!cust || !(Array.isArray(cust.history) ? cust.history : []).some(h => h.reservationId === rid)) return json(res, 404, { error: '找不到這筆歷史預約紀錄' });
+        const out = await softDeleteReservation(rid);
+        return json(res, out.status, out.body);
+      }
+      const adminCustDel = u.pathname.match(/^\/api\/admin\/customers\/([^/]+)$/);
+      if (req.method === 'DELETE' && adminCustDel) {
+        const out = await softDeleteCustomer(decodeURIComponent(adminCustDel[1]));
+        return json(res, out.status, out.body);
+      }
+      if (req.method === 'GET' && u.pathname === '/api/admin/recycle-bin') {
+        const bin = await loadRecycleBin();
+        const liveIds = new Set(readJson(RESERVATIONS_FILE, []).map(x => x.id));
+        const items = bin.map(e => ({ id: e.id, type: e.type, deletedAt: e.deletedAt, summary: e.summary, alreadyLive: e.type === 'reservation' && liveIds.has(e.reservation.id) }))
+          .sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt)));
+        return json(res, 200, items);
+      }
+      const adminBin = u.pathname.match(/^\/api\/admin\/recycle-bin\/([^/]+)(\/restore)?$/);
+      if (req.method === 'POST' && adminBin && adminBin[2]) {
+        const out = await restoreFromRecycleBin(decodeURIComponent(adminBin[1]));
+        return json(res, out.status, out.body);
+      }
+      if (req.method === 'DELETE' && adminBin && !adminBin[2]) {
+        const bin = await loadRecycleBin(); const id = decodeURIComponent(adminBin[1]);
+        if (!bin.some(x => x.id === id)) return json(res, 404, { error: '回收桶中找不到這個項目' });
+        await saveRecycleBin(bin.filter(x => x.id !== id));
+        console.log(`[admin] recycle bin ${id} permanently removed`);
+        return json(res, 200, { ok: true });
+      }
       if (req.method === 'GET' && u.pathname === '/api/admin/customers') {
         const customers=readJson(CUSTOMERS_FILE,[]).sort((a,b)=>a.name.localeCompare(b.name,'zh-Hant')); return json(res,200,customers);
       }
@@ -1230,7 +1503,15 @@ const server = http.createServer(async (req, res) => {
         if (date) list = list.filter(x => x.date === date);
         if (status) list = list.filter(x => x.status === status);
         list.sort((a,b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`));
-        return json(res, 200, list);
+        // 綁定碼與已綁定旗標：已取消或已結束的預約不顯示碼（回 null）；讀取失敗時仍回傳列表（碼為 null）
+        const metaAll = await loadReservationMetaFromSupabase();
+        const boundSet = await loadBoundReservationIds();
+        const out = list.map(item => ({
+          ...item,
+          lineBindCode: (item.status === 'CANCELLED' || reservationHasEnded(item)) ? null : ((metaAll[item.id] || {}).lineBindCode || null),
+          lineBound: boundSet.has(item.id),
+        }));
+        return json(res, 200, out);
       }
       const statusMatch = u.pathname.match(/^\/api\/admin\/reservations\/([^/]+)\/status$/);
       if (req.method === 'PATCH' && statusMatch) {

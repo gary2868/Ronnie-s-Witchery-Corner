@@ -48,6 +48,9 @@ label{display:block;margin:14px 0 7px;color:#5e5268}input{width:100%;padding:13p
   .step{font-size:10px;padding:5px 7px}
   .day{min-height:44px;font-size:13px}
 }
+.bindCode{font-size:1.15em;letter-spacing:.12em;font-family:ui-monospace,Menlo,Consolas,monospace}
+.copyBindBtn{margin-left:8px;padding:4px 10px;font-size:.85em}
+.bindHint{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fff3cd;border:2px solid #e0a800;color:#7a4a00;font-weight:700;line-height:1.6}
 </style>
 </head>
 <body>
@@ -58,12 +61,12 @@ label{display:block;margin:14px 0 7px;color:#5e5268}input{width:100%;padding:13p
 <div class="steps"><span class="step active">1 選擇日期</span><span class="step">2 選擇服務</span><span class="step">3 選擇時間</span><span class="step">4 填寫資料</span><span class="step">5 確認</span></div>
 <div id="dateView"><h2>選擇日期</h2><div class="hint">僅開放今天起至三個月後最後一天的日期；當日不可預約。</div><div class="calendarHead"><button id="prevMonth" class="secondary">‹</button><strong id="monthTitle"></strong><button id="nextMonth" class="secondary">›</button></div><div class="calendar" id="calendar"></div><div class="legend">● 可預約　● 部分已預約　× 已額滿　— 公休　／　當日不可預約</div></div>
 <div id="serviceView" class="hidden"><h2>選擇服務</h2><div class="hint" id="serviceHint"></div><div class="serviceGrid" id="serviceGrid"></div><div class="actions"><button type="button" id="backDate" class="secondary">返回日期</button><button type="button" id="toSlots">下一步</button></div></div>
-<div id="slotView" class="hidden"><h2>選擇時間</h2><div class="hint">系統會依服務長度自動保留連續時段，服務結束後另鎖定 30 分鐘，不接受下一筆預約。</div><p id="selectedDateText"></p><div class="slots" id="slots"></div><div class="actions"><button type="button" id="backService" class="secondary">返回服務</button><button type="button" id="toForm">下一步</button></div></div>
+<div id="slotView" class="hidden"><h2>選擇時間</h2><p id="selectedDateText"></p><div class="slots" id="slots"></div><div class="actions"><button type="button" id="backService" class="secondary">返回服務</button><button type="button" id="toForm">下一步</button></div></div>
 <div id="formView" class="hidden"><h2>填寫資料</h2><label for="name">姓名</label><input id="name" maxlength="100" autocomplete="name" placeholder="請輸入姓名"><label for="birthDate">西元生日</label><input id="birthDate" type="date" min="1900-01-01" autocomplete="bday"><label for="phone">電話</label><input id="phone" type="tel" maxlength="30" autocomplete="tel" inputmode="tel" placeholder="請輸入電話"><label for="note">有什麼想對我說的話嗎？或是你此刻的心情</label><textarea id="note" maxlength="500" rows="4" placeholder="請輸入"></textarea><div class="summaryBox" id="formSummary"></div><div id="formValidation" class="notice hidden" role="alert"></div><div class="actions"><button type="button" id="backSlot" class="secondary">返回時間</button><button id="toConfirm" type="button">確認資料</button></div></div>
 <div id="confirmView" class="hidden"><h2>確認預約</h2><div class="summaryBox" id="confirmSummary"></div><div class="actions"><button type="button" id="backForm" class="secondary">返回修改</button><button type="button" id="submit" class="successBtn">確認預約</button></div></div>
 <div id="successView" class="hidden"><h2>預約完成 ✦</h2><div class="success"><div>你的預約已成功建立。</div><div id="successSummary" class="summary"></div></div><div class="actions"><button type="button" id="copyBtn" class="successBtn">Line官方帳號</button><button type="button" id="officialBtn">關於我</button><button type="button" id="manageAfterBooking" class="secondary">返回預約</button></div><div id="successNotice" class="notice">如需管理預約，請使用電話號碼進行「查詢／修改預約」</div><div id="lineBindNotice" class="notice hidden"></div></div>
 </section>
-<aside class="glass panel"><h2>蘿妮的療癒空間預約</h2><p class="hint">選擇日期、服務與時間後，最後確認資料才會建立預約。預約成功後可複製完整內容並前往官方頁面；系統不寄送 Email。</p><div id="sideSummary" class="summary">尚未選擇預約資料。</div></aside>
+<aside class="glass panel"><div id="sideSummary" class="summary">尚未選擇預約資料。</div></aside>
 </main>
 </div>
 <script>
@@ -265,7 +268,16 @@ function showConfirm(ev){
   setStep(4);
   return true;
 }
-async function submitBooking(){const name=$('name').value.trim(),birthDate=$('birthDate').value,phone=$('phone').value.trim(),note=$('note').value.trim();const missing=[];if(!state.date)missing.push('日期');if(!state.service)missing.push('服務項目');if(!state.startTime)missing.push('開始時間');if(!name)missing.push('姓名');if(!birthDate)missing.push('西元生日');if(!phone)missing.push('電話');if(missing.length){alert('預約資料不完整：'+missing.join('、'));return}try{$('submit').disabled=true;const r=await api('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:state.date,serviceId:state.service,startTime:state.startTime,name,birthDate,phone,note})});state.lastReservation=r.reservation;clearTimeSelection();$('successSummary').innerHTML=`姓名：${esc(r.reservation.name)}<br>生日：${esc(r.reservation.birthDate)}<br>電話：${esc(r.reservation.phone||'—')}<br>服務：${esc(r.reservation.serviceName)}<br>日期：${esc(r.reservation.date)}<br>時間：${esc(r.reservation.startTime)}–${esc(r.reservation.endTime)}`;$('confirmView').classList.add('hidden');$('successView').classList.remove('hidden');const bindCode=r.lineBindCode;if(bindCode){$('lineBindNotice').classList.remove('hidden');$('lineBindNotice').innerHTML=`如需接收 LINE 預約提醒，請先點擊「Line官方帳號」加入官方帳號，再將以下綁定碼傳給官方帳號：<b>${esc(bindCode)}</b><br>綁定碼有效 24 小時。`;}else{$('lineBindNotice').classList.add('hidden');}setStep(4);updateSide();}catch(e){alert(e.message);if(e.message.includes('時段')||e.message.includes('預約'))await loadSlots()}finally{$('submit').disabled=false}}
+async function submitBooking(){const name=$('name').value.trim(),birthDate=$('birthDate').value,phone=$('phone').value.trim(),note=$('note').value.trim();const missing=[];if(!state.date)missing.push('日期');if(!state.service)missing.push('服務項目');if(!state.startTime)missing.push('開始時間');if(!name)missing.push('姓名');if(!birthDate)missing.push('西元生日');if(!phone)missing.push('電話');if(missing.length){alert('預約資料不完整：'+missing.join('、'));return}try{$('submit').disabled=true;const r=await api('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:state.date,serviceId:state.service,startTime:state.startTime,name,birthDate,phone,note})});state.lastReservation=r.reservation;clearTimeSelection();$('successSummary').innerHTML=`姓名：${esc(r.reservation.name)}<br>生日：${esc(r.reservation.birthDate)}<br>電話：${esc(r.reservation.phone||'—')}<br>服務：${esc(r.reservation.serviceName)}<br>日期：${esc(r.reservation.date)}<br>時間：${esc(r.reservation.startTime)}–${esc(r.reservation.endTime)}${r.lineBindCode?`<br>綁定碼：<b class="bindCode">${esc(r.lineBindCode)}</b> <button type="button" class="secondary copyBindBtn" onclick="copyBindCode('${esc(r.lineBindCode)}',this)">複製</button>`:''}`;$('confirmView').classList.add('hidden');$('successView').classList.remove('hidden');const bindCode=r.lineBindCode;if(bindCode){$('lineBindNotice').innerHTML=`<div class="bindHint">（請將綁定碼回傳官方帳號，以利接收預約提醒）</div>`;$('lineBindNotice').classList.remove('hidden');}else{$('lineBindNotice').classList.add('hidden');}setStep(4);updateSide();}catch(e){alert(e.message);if(e.message.includes('時段')||e.message.includes('預約'))await loadSlots()}finally{$('submit').disabled=false}}
+async function copyBindCode(code, btn){
+  try { await navigator.clipboard.writeText(String(code)); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = String(code); ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } finally { document.body.removeChild(ta); }
+  }
+  if (btn) { const old = btn.textContent; btn.textContent = '已複製'; setTimeout(() => { btn.textContent = old; }, 1500); }
+}
 function bookingText(){const r=state.lastReservation;return `蘿妮的療癒空間預約內容\n姓名：${r.name}\n生日：${r.birthDate}\n電話：${r.phone||'—'}\n服務項目：${r.serviceName}\n日期：${r.date}\n時間：${r.startTime}–${r.endTime}`}
 function openLineOfficial(){window.open('https://line.me/R/ti/p/@798tysda?oat_content=url&ts=09230058','_blank','noopener,noreferrer')}
 $('manageBookingBtn').onclick=()=>location.href='/manage.html';

@@ -874,3 +874,33 @@ describe('H10. 排程與時區守門', () => {
     m.reset(); T(m).reservations.push(resRow('a', '2026-10-25')); assert.equal((await W.reconcileCalendar(ENV_ON(), mkDeps(NOW))).warn, undefined);
   });
 });
+
+/* ───────────── H11. 電話鍵防護：不可用的電話不得形成共用的綁定紀錄 ───────────── */
+describe('H11. 電話鍵：數字少於 7 位視為不可用', () => {
+  const sign = body => crypto.createHmac('sha256', 'line-channel-secret').update(body).digest('base64');
+  let n = 0; const msg = (text, userId) => ({ type: 'message', webhookEventId: 'EVP' + (++n), replyToken: 'rtp' + n, source: { userId }, message: { type: 'text', text } });
+  const hook = async events => { const body = JSON.stringify({ events }); return W.handleLineWebhook(new Request('http://w/line/webhook', { method: 'POST', headers: { 'x-line-signature': sign(body) }, body }), ENV_ON(), mkDeps(NOW)); };
+  const token = (code, phone) => T(m).line_bind_tokens.push({ code, reservation_id: 'r1', phone, expires_at: new Date(NOW + 3600e3).toISOString() });
+  const binds = () => T(m).app_state.filter(x => x.key.startsWith('line_bind:'));
+
+  it('usablePhoneKey：只取數字；少於 7 位（含全是符號）回傳空字串', () => {
+    assert.equal(W.usablePhoneKey('0912-345-678'), '0912345678'); assert.equal(W.usablePhoneKey('+886 912 345 678'), '886912345678');
+    assert.equal(W.usablePhoneKey('1234567'), '1234567');
+    for (const bad of ['--------', '(((())))', '123456', '', null, undefined, '電話：無']) assert.equal(W.usablePhoneKey(bad), '', String(bad));
+  });
+  it('綁定：電話不可用 → 不寫入任何綁定（特別是不會出現鍵為空的 line_bind:）、綁定碼作廢、客人收到說明；不同客人不會共用紀錄', async () => {
+    token('AAAAA1', '--------'); token('AAAAA2', '12345');
+    await hook([msg('AAAAA1', 'U_ONE'), msg('AAAAA2', 'U_TWO')]);
+    assert.equal(binds().length, 0, '不可寫入任何綁定'); assert.ok(!T(m).app_state.some(x => x.key === 'line_bind:'), '不可出現空鍵');
+    assert.equal(T(m).line_bind_tokens.length, 0, '綁定碼已作廢'); assert.equal(m.S.line.replies.filter(r => /電話格式無法用於綁定/.test(r.text)).length, 2);
+    token('BBBBB1', '0912-345-678'); await hook([msg('BBBBB1', 'U_REAL')]);
+    assert.deepEqual(binds().map(b => [b.key, b.value.userId]), [['line_bind:0912345678', 'U_REAL']], '正常的電話仍可綁定');
+  });
+  it('提醒：即使資料庫裡有舊的共用綁定（空鍵），電話不可用的預約也不會收到提醒', async () => {
+    T(m).app_state.push({ key: 'line_bind:', value: { userId: 'U_STRANGER' }, updated_at: 'x' });
+    T(m).reservations.push(resRow('r1', '2026-10-21', '10:00', { phone: '--------' }));
+    await W.runTick(ENV_ON(), mkDeps(at('2026-10-20', '17:00')));
+    assert.equal(m.S.line.pushes.length, 0, '不可把提醒送給不相干的人');
+    const job = T(m).integration_jobs.find(j => j.type === 'reminder.customer'); assert.equal(job.payload.steps.customerReminder, 'skipped:no_usable_phone');
+  });
+});

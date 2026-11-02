@@ -20,7 +20,15 @@ $TMO node tests/sync-dataset-isolated.test.cjs >/tmp/ronnie-unit.log 2>&1; rc=$?
 tail -3 /tmp/ronnie-unit.log; [ $rc -eq 0 ] || { echo "❌ 失敗（結束碼 $rc）"; status=1; }
 
 echo; echo "== 2/2 Worker 單元 + 整合測試（真實 server.js） =="
-$TMO node --test $FLAG ${RONNIE_REPORTER:+--test-reporter=$RONNIE_REPORTER} tests/worker/worker.test.mjs tests/worker/integration.test.mjs >/tmp/ronnie-worker.log 2>&1; rc=$?
+# 自動收集 tests/worker/*.test.mjs，新增測試檔不會再被遺漏
+WORKER_TESTS=""
+for f in tests/worker/*.test.mjs; do
+  [ -f "$f" ] && WORKER_TESTS="$WORKER_TESTS $f"
+done
+N_TESTS=$(echo $WORKER_TESTS | wc -w)
+if [ "$N_TESTS" -lt 1 ]; then echo "❌ 找不到 tests/worker/*.test.mjs"; exit 1; fi
+echo "收集到 $N_TESTS 個 Worker 測試檔"
+$TMO node --test $FLAG ${RONNIE_REPORTER:+--test-reporter=$RONNIE_REPORTER} $WORKER_TESTS >/tmp/ronnie-worker.log 2>&1; rc=$?
 SUMMARY=$(grep -E "^(# |ℹ )(tests|pass|fail|cancelled|skipped) " /tmp/ronnie-worker.log)
 if [ -n "$SUMMARY" ]; then echo "$SUMMARY"; else echo "（無法解析測試摘要，以下為輸出尾端）"; tail -15 /tmp/ronnie-worker.log; fi
 # 保險：以「失敗/取消筆數」再判斷一次，不單靠結束碼

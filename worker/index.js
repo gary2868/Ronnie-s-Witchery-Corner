@@ -146,6 +146,13 @@ async function safeEqual(a, b) {
   return diff === 0;
 }
 export function normalizePhoneKey(phone) { return String(phone || '').replace(/\D/g, ''); }
+const MIN_PHONE_DIGITS = 7;
+/**
+ * 綁定與提醒用的電話鍵：數字少於 7 位視為「不可用」並回傳空字串。
+ * 伺服器只檢查電話長度 ≥ 8 個「字元」，全是符號的電話（例如 --------）取數字後會是空字串，
+ * 若直接當鍵，所有這類客人會共用同一個綁定紀錄（可能收到別人的提醒）。
+ */
+export function usablePhoneKey(phone) { const k = normalizePhoneKey(phone); return k.length >= MIN_PHONE_DIGITS ? k : ''; }
 
 export function makeDeps(overrides = {}) {
   return { fetch: (...a) => fetch(...a), now: () => Date.now(), log: [], state: {}, ...overrides };
@@ -432,7 +439,8 @@ async function stepCustomerReminder(env, deps, job) {
   if (!cur || cur.status === 'CANCELLED') return 'skipped:cancelled';
   if (cur.date !== planned.date || cur.startTime !== planned.startTime) return 'skipped:rescheduled';
   if (deps.now() >= taipeiToUtcMs(cur.date, cur.startTime)) return 'skipped:started';
-  const key = normalizePhoneKey(cur.phone);
+  const key = usablePhoneKey(cur.phone);
+  if (!key) return 'skipped:no_usable_phone';
   const bind = await sb(env, deps, 'app_state', { query: `?key=eq.${enc('line_bind:' + key)}&select=value` });
   const userId = bind && bind[0] && bind[0].value && bind[0].value.userId;
   if (!userId) return 'skipped:no_line_binding';
@@ -581,11 +589,18 @@ async function handleBindCode(env, deps, ev, code) {
     return replyOrPush(env, deps, ev, '綁定碼無效或已過期，請回到預約完成頁確認，或重新預約取得新的綁定碼。');
   }
 
+  // 電話無法形成可靠的鍵 → 不綁定（綁定碼已作廢，無法重用）
+  const phoneKey = usablePhoneKey(t.phone);
+  if (!phoneKey) {
+    logEvent(deps, { task: 'line_bind_rejected', reason: 'phone_unusable' });
+    return replyOrPush(env, deps, ev, '此預約的電話格式無法用於綁定提醒，請聯絡店家協助。');
+  }
+
   // 3. 寫入綁定（含事件 ID，供重送時辨識）。失敗就把綁定碼還回去，並丟出暫時性錯誤讓 LINE 重送。
   try {
     await sb(env, deps, 'app_state', {
       method: 'POST', query: '?on_conflict=key', prefer: 'resolution=merge-duplicates,return=minimal',
-      body: { key: `line_bind:${normalizePhoneKey(t.phone)}`, value: { userId, boundAt: nowIso, reservationId: t.reservation_id, eventId: ev.webhookEventId || null }, updated_at: nowIso },
+      body: { key: `line_bind:${phoneKey}`, value: { userId, boundAt: nowIso, reservationId: t.reservation_id, eventId: ev.webhookEventId || null }, updated_at: nowIso },
     });
   } catch (error) {
     try { await sb(env, deps, 'line_bind_tokens', { method: 'POST', query: '?on_conflict=code', prefer: 'resolution=merge-duplicates,return=minimal', body: { code: t.code, reservation_id: t.reservation_id, phone: t.phone, expires_at: t.expires_at } }); }
@@ -593,7 +608,7 @@ async function handleBindCode(env, deps, ev, code) {
     throw error;
   }
   try { await putAttempts(env, deps, userId, { count: 0, windowStart: nowIso }); } catch { /* 清除次數失敗不影響綁定 */ }
-  logEvent(deps, { task: 'line_bind', phoneKey: normalizePhoneKey(t.phone).slice(-4).padStart(10, '*') });
+  logEvent(deps, { task: 'line_bind', phoneKey: phoneKey.slice(-4).padStart(10, '*') });
   return replyOrPush(env, deps, ev, '✅ 綁定成功！系統會在預約前一天下午 5:00 傳送提醒給您。');
 }
 
