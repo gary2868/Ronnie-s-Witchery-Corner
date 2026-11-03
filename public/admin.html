@@ -166,6 +166,7 @@ h1{font-size:21px}
     <button id="tabReservations" class="tab secondary">預約紀錄</button>
     <button id="tabCustomers" class="tab secondary">客人檔案</button>
     <button id="tabClosures" class="tab secondary">公休設定</button>
+    <button id="tabServices" class="tab secondary">服務設定</button>
     <button id="exportData" class="tab secondary">一鍵匯出後台資料</button>
     <button id="backupDrive" class="tab secondary">備份到 Google Drive</button>
     <button id="importData" class="tab secondary">匯入後台資料</button>
@@ -196,18 +197,29 @@ h1{font-size:21px}
   </div>
 
   <div id="closureView" class="hidden">
-    <div class="notice">可設定全天公休，或指定 30 分鐘區間為不可預約時間。</div>
+    <div class="notice">可設定全天公休、多日連休（每天一筆），或指定 30 分鐘區間為不可預約時間。</div>
     <div class="adminTools">
       <input id="closureDate" type="date">
+      <input id="closureEndDate" type="date" class="hidden" title="連休結束日期">
       <select id="closureMode">
         <option value="all">全天公休</option>
         <option value="range">指定時段公休</option>
+        <option value="multi">多日連休</option>
       </select>
       <select id="closureStart" class="hidden"></select>
       <select id="closureEnd" class="hidden"></select>
       <button id="addClosure">新增公休</button>
     </div>
     <div id="closureContent"></div>
+  </div>
+
+  <div id="serviceView" class="hidden">
+    <div class="notice">服務名稱、說明、時長、價格可修改；取消勾選「前台顯示」即停用（前台不顯示、不可預約，既有預約不受影響）。時長須為 30 分鐘的倍數。</div>
+    <div class="adminTools">
+      <button id="addServiceRow" class="secondary">＋ 新增服務</button>
+      <button id="saveServices">儲存服務設定</button>
+    </div>
+    <div id="serviceContent"></div>
   </div>
 
   <div id="customerView" class="hidden">
@@ -370,7 +382,7 @@ async function importDataFromFile(file) {
 }
 
 function showTab(name) {
-  ['calendar','reservation','customer','closure'].forEach(x => {
+  ['calendar','reservation','customer','closure','service'].forEach(x => {
     $(x + 'View').classList.toggle('hidden', x !== name);
   });
 
@@ -378,11 +390,13 @@ function showTab(name) {
   $('tabReservations').classList.toggle('active', name === 'reservation');
   $('tabCustomers').classList.toggle('active', name === 'customer');
   $('tabClosures').classList.toggle('active', name === 'closure');
+  $('tabServices').classList.toggle('active', name === 'service');
 
   $('tabCalendar').classList.toggle('secondary', name !== 'calendar');
   $('tabReservations').classList.toggle('secondary', name !== 'reservation');
   $('tabCustomers').classList.toggle('secondary', name !== 'customer');
   $('tabClosures').classList.toggle('secondary', name !== 'closure');
+  $('tabServices').classList.toggle('secondary', name !== 'service');
 }
 
 const adminCalendarCache = new Map();
@@ -1196,9 +1210,12 @@ function fillClosureTimes() {
   $('closureStart').innerHTML = starts.map(t => `<option value="${t}">${t}</option>`).join('');
 
   $('closureMode').onchange = () => {
-    const range = $('closureMode').value === 'range';
+    const mode = $('closureMode').value;
+    const range = mode === 'range';
+    const multi = mode === 'multi';
     $('closureStart').classList.toggle('hidden', !range);
     $('closureEnd').classList.toggle('hidden', !range);
+    $('closureEndDate').classList.toggle('hidden', !multi);
 
     if (range) {
       $('closureStart').value = starts[0];
@@ -1228,21 +1245,42 @@ function fillClosureTimes() {
   }
 }
 
+function taipeiTodayISO() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const g = t => parts.find(p => p.type === t).value;
+  return `${g('year')}-${g('month')}-${g('day')}`;
+}
+window.__closureAccordionOpen = window.__closureAccordionOpen || { expired: false };
+function renderClosureCard(x) {
+  return `
+    <div class="booking">
+      <div>
+        <b>${esc(x.date)}</b><br>
+        ${x.startTime ? `${esc(x.startTime)}–${esc(x.endTime)} 不可預約` : '全天公休'}
+      </div>
+      <button class="danger" onclick="deleteClosure('${encodeURIComponent(x.id)}')">刪除</button>
+    </div>
+  `;
+}
 async function loadClosures() {
   try {
     const list = await api('/api/admin/closures');
-
-    $('closureContent').innerHTML = list.length
-      ? `<div class="admin-list">${list.map(x => `
-          <div class="booking">
-            <div>
-              <b>${esc(x.date)}</b><br>
-              ${x.startTime ? `${esc(x.startTime)}–${esc(x.endTime)} 不可預約` : '全天公休'}
-            </div>
-            <button class="danger" onclick="deleteClosure('${encodeURIComponent(x.id)}')">刪除</button>
-          </div>
-        `).join('')}</div>`
-      : '目前沒有公休設定。';
+    const today = taipeiTodayISO();
+    // 降序：日期新到舊，同日依時段由晚到早
+    const sorted = [...list].sort((a, b) => `${b.date}${b.startTime || ''}`.localeCompare(`${a.date}${a.startTime || ''}`));
+    const active = sorted.filter(x => x.date >= today);
+    const expired = sorted.filter(x => x.date < today);
+    const cards = arr => `<div class="admin-list">${arr.map(renderClosureCard).join('')}</div>`;
+    let html = active.length ? cards(active) : (expired.length ? '' : '目前沒有公休設定。');
+    if (expired.length) {
+      html += `
+        <details class="adminAccordion" data-accordion="closure-expired" ${window.__closureAccordionOpen.expired ? 'open' : ''}
+                 ontoggle="window.__closureAccordionOpen.expired = this.open">
+          <summary><span>Expired</span><span class="accCount">${expired.length}</span></summary>
+          ${cards(expired)}
+        </details>`;
+    }
+    $('closureContent').innerHTML = html;
   } catch (e) {
     if (e.message === '未登入') showLogin();
     else $('closureContent').innerHTML = `<p>${esc(e.message)}</p>`;
@@ -1250,8 +1288,11 @@ async function loadClosures() {
 }
 
 async function addClosure() {
+  const mode = $('closureMode').value;
+  const range = mode === 'range';
+  const multi = mode === 'multi';
   const date = $('closureDate').value;
-  const range = $('closureMode').value === 'range';
+  const endDate = multi ? $('closureEndDate').value : '';
   const start = range ? $('closureStart').value : '';
   const end = range ? $('closureEnd').value : '';
 
@@ -1259,23 +1300,36 @@ async function addClosure() {
     alert('請選擇公休日期');
     return;
   }
-
+  if (multi && !endDate) {
+    alert('請選擇連休結束日期');
+    return;
+  }
+  if (multi && endDate < date) {
+    alert('結束日期不可早於開始日期');
+    return;
+  }
   if (range && !end) {
     alert('請選擇公休結束時間');
     return;
   }
 
   try {
-    await api('/api/admin/closures', {
+    const d = await api('/api/admin/closures', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({date,startTime:start,endTime:end})
+      body:JSON.stringify({date, endDate, startTime:start, endTime:end})
     });
 
     $('closureDate').value = '';
+    $('closureEndDate').value = '';
     $('closureMode').value = 'all';
     $('closureStart').classList.add('hidden');
     $('closureEnd').classList.add('hidden');
+    $('closureEndDate').classList.add('hidden');
+
+    if (multi) {
+      alert(`已新增 ${d.count} 天公休${d.skipped ? `（${d.skipped} 天原本已是公休，已略過）` : ''}`);
+    }
 
     await loadClosures();
     adminCalendarCache.clear();
@@ -1295,6 +1349,75 @@ async function deleteClosure(id) {
     await loadCalendar();
   } catch (e) {
     alert(e.message);
+  }
+}
+
+let serviceRows = [];   // 畫面上目前的服務列（已儲存＋尚未儲存的新列）
+function serviceRowHtml(s, i) {
+  const isNew = !s.id;
+  return `<div class="booking serviceRow" data-idx="${i}" data-id="${esc(s.id || '')}">
+    <div style="flex:1 1 240px;min-width:0">
+      <label>服務名稱</label><input class="svcName" maxlength="40" value="${esc(s.name || '')}">
+      <label>說明（前台顯示，留空則自動產生）</label><input class="svcDesc" maxlength="120" value="${esc(s.description || '')}">
+    </div>
+    <div style="flex:0 0 150px">
+      <label>時長（分鐘）</label><input class="svcDuration" type="number" min="30" max="480" step="30" value="${esc(s.durationMinutes ?? 60)}">
+      <label>價格（NT$）</label><input class="svcPrice" type="number" min="0" max="99999" step="1" value="${esc(s.price ?? 0)}">
+    </div>
+    <div style="flex:0 0 auto">
+      <label><input class="svcActive" type="checkbox" ${s.active === false ? '' : 'checked'}> 前台顯示</label>
+      ${isNew ? '<button type="button" class="danger" onclick="removeNewServiceRow(this)">移除</button>' : ''}
+    </div>
+  </div>`;
+}
+function renderServices() {
+  $('serviceContent').innerHTML = serviceRows.length ? serviceRows.map((s, i) => serviceRowHtml(s, i)).join('') : '目前沒有服務。';
+}
+async function loadServices() {
+  try {
+    serviceRows = await api('/api/admin/services');
+    renderServices();
+  } catch (e) {
+    if (e.message === '未登入') showLogin();
+    else $('serviceContent').innerHTML = `<p>${esc(e.message)}</p>`;
+  }
+}
+function collectServiceRows() {
+  return [...document.querySelectorAll('#serviceContent .serviceRow')].map(row => ({
+    id: row.dataset.id || undefined,
+    name: row.querySelector('.svcName').value,
+    description: row.querySelector('.svcDesc').value,
+    durationMinutes: Number(row.querySelector('.svcDuration').value),
+    price: Number(row.querySelector('.svcPrice').value),
+    active: row.querySelector('.svcActive').checked
+  }));
+}
+function addServiceRow() {
+  const cur = collectServiceRows();
+  cur.push({ name: '', description: '', durationMinutes: 60, price: 0, active: true });
+  serviceRows = cur;
+  renderServices();
+}
+function removeNewServiceRow(btn) {
+  const idx = Number(btn.closest('.serviceRow').dataset.idx);
+  const cur = collectServiceRows();
+  cur.splice(idx, 1);
+  serviceRows = cur;
+  renderServices();
+}
+async function saveServices() {
+  try {
+    const d = await api('/api/admin/services', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ services: collectServiceRows() })
+    });
+    alert('服務設定已儲存');
+    serviceRows = d.services;
+    renderServices();
+  } catch (e) {
+    if (e.message === '未登入') showLogin();
+    else alert(e.message);
   }
 }
 
@@ -1387,6 +1510,12 @@ $('tabClosures').onclick = () => {
 };
 
 $('addClosure').onclick = addClosure;
+$('tabServices').onclick = () => {
+  showTab('service');
+  loadServices();
+};
+$('addServiceRow').onclick = addServiceRow;
+$('saveServices').onclick = saveServices;
 fillClosureTimes();
 $('refreshAdmin').onclick = loadAdmin;
 
