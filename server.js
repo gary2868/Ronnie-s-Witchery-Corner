@@ -1349,6 +1349,27 @@ const server = http.createServer(async (req, res) => {
           return json(res, 500, {error:'匯入失敗，已回復匯入前資料'});
         }
       }
+      if (req.method === 'GET' && u.pathname === '/api/admin/services') {
+        return json(res, 200, [...CONFIG.services].sort((a, b) => a.sortOrder - b.sortOrder));
+      }
+      if (req.method === 'POST' && u.pathname === '/api/admin/services') {
+        const data = await readBody(req);
+        const result = normalizeServicesInput(data.services);
+        if (result.error) return json(res, 400, { error: result.error });
+        const incoming = new Set(result.services.map(x => x.id));
+        const missing = CONFIG.services.filter(x => !incoming.has(x.id));
+        if (missing.length) return json(res, 400, { error: `不可移除既有服務（${missing.map(x => x.name).join('、')}），請改為停用` });
+        const previous = CONFIG.services;
+        CONFIG.services = result.services;
+        try {
+          await persistSettings();
+        } catch (error) {
+          CONFIG.services = previous;
+          console.warn('[settings] save failed:', error.message);
+          return json(res, 503, { error: '服務設定儲存失敗，請稍後再試' });
+        }
+        return json(res, 200, { services: result.services });
+      }
       if (req.method === 'GET' && u.pathname === '/api/admin/closures') {
         const list = readJson(CLOSURES_FILE, []).sort((a,b) => `${a.date}${a.startTime||''}`.localeCompare(`${b.date}${b.startTime||''}`));
         return json(res, 200, list);
@@ -1360,6 +1381,32 @@ const server = http.createServer(async (req, res) => {
         const endTime = String(data.endTime || '').trim();
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !validDate(date)) return json(res,400,{error:'公休日期格式錯誤'});
         const allDay = !startTime && !endTime;
+        const endDate = String(data.endDate || '').trim();
+        if (endDate && endDate !== date) {
+          // 多日連休：僅支援全天；每一天存成一筆（沿用公休資料表，日曆每天一個全天事件）。全部檢查通過才寫入。
+          if (!allDay) return json(res,400,{error:'多日公休僅支援全天公休'});
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate) || !validDate(endDate)) return json(res,400,{error:'結束日期格式錯誤'});
+          if (endDate < date) return json(res,400,{error:'結束日期不可早於開始日期'});
+          const days = dateRangeISO(date, endDate);
+          if (days.length > 31) return json(res,400,{error:'多日公休最多 31 天'});
+          const reservationsAll = readJson(RESERVATIONS_FILE, []);
+          const closuresAll = readJson(CLOSURES_FILE, []);
+          const bookedDays = days.filter(d => reservationsAll.some(x => x.date === d && x.status !== 'CANCELLED'));
+          if (bookedDays.length) return json(res,409,{error:`以下日期已有預約，無法設定公休：${bookedDays.join('、')}`, code:'HAS_RESERVATIONS', dates:bookedDays});
+          const partialDays = days.filter(d => closuresAll.some(x => x.date === d && (x.startTime || x.endTime)));
+          if (partialDays.length) return json(res,409,{error:`以下日期已有時段公休，請先刪除：${partialDays.join('、')}`, code:'HAS_PARTIAL', dates:partialDays});
+          const nowIso = new Date().toISOString();
+          const created = [];
+          let skipped = 0;
+          for (const d of days) {
+            if (closuresAll.some(x => x.date === d && !x.startTime && !x.endTime)) { skipped++; continue; }
+            const item = { id: crypto.randomUUID(), date: d, createdAt: nowIso };
+            closuresAll.push(item);
+            created.push(item);
+          }
+          if (created.length) { await queueWrite(CLOSURES_FILE, closuresAll); invalidateCalendarCaches(); await emitClosureChanged(); }
+          return json(res,201,{closures:created, count:created.length, skipped});
+        }
         if (!allDay) {
           if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) return json(res,400,{error:'請選擇完整的公休開始與結束時間'});
           const a=toMinutes(startTime), b=toMinutes(endTime);
@@ -1699,9 +1746,69 @@ async function migrateCancelStatusConsistency() {
   return changed.length;
 }
 
+/* ───────────── 服務設定（後台可編輯）─────────────
+ * Supabase 模式：app_state.settings；本機模式：data/settings.json。
+ * 停用（active=false）的服務不在前台顯示、不可預約；既有預約保留當時的服務資訊。
+ * 服務只能停用、不能移除，避免歷史資料指向不存在的服務。
+ */
+async function persistSettings() {
+  const payload = { services: CONFIG.services, schedule: CONFIG.schedule };
+  if (STORAGE_MODE === 'supabase') {
+    await supabaseRequest('app_state', 'POST', { key: 'settings', value: payload, updated_at: new Date().toISOString() },
+      '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
+    return;
+  }
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = `${SETTINGS_FILE}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8');
+  fs.renameSync(tmp, SETTINGS_FILE);
+}
+async function loadSettingsFromSupabase() {
+  if (STORAGE_MODE !== 'supabase') return;
+  const rows = await supabaseRequest('app_state', 'GET', null, '?select=value&key=eq.settings&limit=1');
+  const v = rows?.[0]?.value;
+  if (v && Array.isArray(v.services)) CONFIG.services = v.services;
+  if (v && v.schedule && typeof v.schedule === 'object') CONFIG.schedule = v.schedule;
+}
+function normalizeServicesInput(list) {
+  if (!Array.isArray(list) || list.length === 0) return { error: '服務資料格式錯誤' };
+  if (list.length > 30) return { error: '服務數量過多（最多 30 項）' };
+  const seen = new Set();
+  const out = [];
+  for (const [i, raw] of list.entries()) {
+    const name = String(raw?.name ?? '').trim();
+    if (!name) return { error: `第 ${i + 1} 筆：服務名稱不可為空` };
+    if (name.length > 40) return { error: `「${name}」：服務名稱最多 40 字` };
+    const duration = Number(raw?.durationMinutes);
+    if (!Number.isInteger(duration) || duration < CONFIG.slotMinutes || duration > 480 || duration % CONFIG.slotMinutes) {
+      return { error: `「${name}」：服務時長須為 ${CONFIG.slotMinutes} 分鐘的倍數（${CONFIG.slotMinutes}～480）` };
+    }
+    const price = Number(raw?.price);
+    if (!Number.isInteger(price) || price < 0 || price > 99999) return { error: `「${name}」：價格須為 0～99999 的整數` };
+    const description = String(raw?.description ?? '').trim().slice(0, 120) || `完整約 ${duration} 分鐘`;
+    let id = String(raw?.id || '').trim();
+    if (!id) id = 'svc-' + crypto.randomBytes(4).toString('hex');
+    if (!/^[a-z0-9-]{1,40}$/.test(id)) return { error: `「${name}」：服務代碼格式錯誤` };
+    if (seen.has(id)) return { error: `服務代碼重複：${id}` };
+    seen.add(id);
+    out.push({ id, name, description, price, durationMinutes: duration, active: raw?.active !== false, sortOrder: i + 1 });
+  }
+  return { services: out };
+}
+function dateRangeISO(start, end) {
+  const out = [];
+  let d = start;
+  while (d <= end && out.length <= 31) {
+    out.push(d);
+    d = new Date(Date.parse(d + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+  }
+  return out;
+}
+
 async function startServer() {
   if (STORAGE_MODE === 'supabase') {
     await hydrateFromSupabase();
+    await loadSettingsFromSupabase();
     console.log('Storage mode: Supabase');
   } else {
     console.log('Storage mode: Local JSON');
