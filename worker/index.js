@@ -325,7 +325,7 @@ export function reservationEvent(r) {
   const end = endTimeOf(r);
   const body = {
     summary: `${r.name}｜${r.serviceName}`,
-    description: [`電話：${r.phone}`, r.lineId ? `LINE ID：${r.lineId}` : '', r.note ? `備註：${r.note}` : '', `預約編號：${r.id}`].filter(Boolean).join('\n'),
+    description: [`電話：${r.phone}`, r.lineId ? `LINE ID：${r.lineId}` : '', r.note ? `備註：${r.note}` : ''].filter(Boolean).join('\n'),
     start: { dateTime: `${r.date}T${hhmm(r.startTime)}:00+08:00`, timeZone: 'Asia/Taipei' },
     end: { dateTime: `${r.date}T${hhmm(end)}:00+08:00`, timeZone: 'Asia/Taipei' },
     reminders: { useDefault: false },
@@ -336,13 +336,13 @@ export function reservationEvent(r) {
 }
 export function closureEvent(c) {
   const allDay = !c.startTime && !c.endTime;
-  const body = { summary: '公休', description: `公休設定 ${c.id}`, reminders: { useDefault: false }, colorId: '8' };
+  const body = { summary: '公休', description: '公休設定', reminders: { useDefault: false }, colorId: '8' };
   if (allDay) { body.start = { date: c.date }; body.end = { date: addDays(c.date, 1) }; }
   else {
     body.start = { dateTime: `${c.date}T${hhmm(c.startTime)}:00+08:00`, timeZone: 'Asia/Taipei' };
     body.end = { dateTime: `${c.date}T${hhmm(c.endTime)}:00+08:00`, timeZone: 'Asia/Taipei' };
   }
-  const fp = fingerprint(JSON.stringify([body.summary, body.start, body.end]));
+  const fp = fingerprint(JSON.stringify([body.summary, body.description, body.start, body.end]));
   body.extendedProperties = { private: { ronnie: '1', kind: 'closure', rid: String(c.id), fp } };
   return { id: eventIdFor('closure', c.id), body, fp };
 }
