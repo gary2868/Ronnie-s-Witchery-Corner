@@ -62,6 +62,7 @@ describe('整合測試：真實 server.js（Supabase 模式）+ Worker', () => {
     const adminMsgs = () => m.S.line.pushes.filter(p => p.to === 'U_ADMIN');
     const deadline = Date.now() + 5000;
     const done = () => adminMsgs().length >= 1 && events().length >= 1 && T().integration_jobs.length > 0 && T().integration_jobs.every(j => j.status === 'done');
+    const waitUntil = async (cond, ms = 5000) => { const end = Date.now() + ms; while (!cond() && Date.now() < end) { await worker.idle(); await new Promise(r => setTimeout(r, 25)); } };
     while (!done() && Date.now() < deadline) { await worker.idle(); await new Promise(r => setTimeout(r, 25)); }
     assert.equal(adminMsgs().length, 1, '管理者通知必須在 5 秒內送達（喚醒為非同步，但通知不得遺失）');
     assert.ok(events().length >= 1, '日曆事件必須在 5 秒內建立（同一個任務的後續步驟）'); assert.match(adminMsgs()[0].text, /新預約[\s\S]*陳小華[\s\S]*0912-345-678/);
@@ -85,16 +86,16 @@ describe('整合測試：真實 server.js（Supabase 模式）+ Worker', () => {
     worker.clock.cur = null;
 
     // 4) 後台取消 → 管理者收到通知、日曆事件刪除
-    assert.equal((await api('PATCH', `/api/admin/reservations/${rid}/cancel`)).status, 200); await worker.idle();
+    assert.equal((await api('PATCH', `/api/admin/reservations/${rid}/cancel`)).status, 200); await waitUntil(() => adminMsgs().length >= 2);
     assert.equal(adminMsgs().length, 2); assert.match(adminMsgs()[1].text, /預約已取消/); assert.equal(events().length, 0);
 
     // 5) 後台把已取消的預約改成 Finished（恢復）→ 日曆事件回來、管理者收到修改通知
-    assert.equal((await api('PATCH', `/api/admin/reservations/${rid}/status`, { statusLabel: 'Finished' })).status, 200); await worker.idle();
+    assert.equal((await api('PATCH', `/api/admin/reservations/${rid}/status`, { statusLabel: 'Finished' })).status, 200); await waitUntil(() => events().length === 1 && adminMsgs().length >= 3);
     assert.equal(events().length, 1); assert.match(adminMsgs()[2].text, /預約已修改/);
 
     // 6) 公休：新增 → 日曆出現「公休」；刪除 → 消失（Worker 對帳）
     const d2 = W.addDays(slot.date, 5);
-    const cl = await api('POST', '/api/admin/closures', { date: d2 }); assert.equal(cl.status, 201); await worker.idle();
+    const cl = await api('POST', '/api/admin/closures', { date: d2 }); assert.equal(cl.status, 201); await waitUntil(() => events().some(e => e.start && e.start.date === d2));
     const ce = events().find(e => e.summary === '公休'); assert.ok(ce); assert.deepEqual(ce.start, { date: d2 });
     assert.equal((await api('DELETE', `/api/admin/closures/${cl.json.closure.id}`)).status, 200); await worker.idle();
     assert.equal(events().filter(e => e.summary === '公休').length, 0);

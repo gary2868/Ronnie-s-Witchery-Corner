@@ -262,7 +262,7 @@ async function replyOrPush(env, deps, ev, text) {
 }
 
 export function adminMessage(type, r) {
-  const head = { 'reservation.created': '🆕 新預約', 'reservation.updated': '✏️ 預約已修改', 'reservation.cancelled': '❌ 預約已取消' }[type] || '📌 預約異動';
+  const head = { 'reservation.created': '🆕 新預約', 'reservation.updated': '✏️ 預約已修改', 'reservation.cancelled': '❌ 預約已取消', 'line.bound': '🔗 顧客已用 LINE 登入綁定提醒' }[type] || '📌 預約異動';
   const lines = [
     head,
     `姓名：${r.name}`,
@@ -448,13 +448,21 @@ async function stepCustomerReminder(env, deps, job) {
   if (!cur || cur.status === 'CANCELLED') return 'skipped:cancelled';
   if (cur.date !== planned.date || cur.startTime !== planned.startTime) return 'skipped:rescheduled';
   if (deps.now() >= taipeiToUtcMs(cur.date, cur.startTime)) return 'skipped:started';
-  const key = usablePhoneKey(cur.phone);
-  if (!key) return 'skipped:no_usable_phone';
-  const bind = await sb(env, deps, 'app_state', { query: `?key=eq.${enc('line_bind:' + key)}&select=value` });
-  const userId = bind && bind[0] && bind[0].value && bind[0].value.userId;
-  if (!userId) return 'skipped:no_line_binding';
+  // 優先：預約時以 LINE 登入綁定的 userId（綁定到這筆預約本身，不依電話）
+  const direct = await sb(env, deps, 'app_state', { query: `?key=eq.${enc('line_reservation:' + cur.id)}&select=value` });
+  let userId = direct && direct[0] && direct[0].value && direct[0].value.userId;
+  let to = `reservation:${cur.id}`;
+  if (!userId) {
+    // 備選：6 碼綁定（依電話）
+    const key = usablePhoneKey(cur.phone);
+    if (!key) return 'skipped:no_usable_phone';
+    const bind = await sb(env, deps, 'app_state', { query: `?key=eq.${enc('line_bind:' + key)}&select=value` });
+    userId = bind && bind[0] && bind[0].value && bind[0].value.userId;
+    if (!userId) return 'skipped:no_line_binding';
+    to = key;
+  }
   const text = reminderMessage(cur);
-  if (m === 'dry') { logEvent(deps, { task: 'reminder', dry: true, to: key, text }); return 'dry'; }
+  if (m === 'dry') { logEvent(deps, { task: 'reminder', dry: true, to, text }); return 'dry'; }
   await linePush(env, deps, userId, text, `reminder:${job.dedupe_key}`);
   return 'sent';
 }
@@ -474,7 +482,8 @@ async function processOne(env, deps, job) {
     if (job.type === 'reminder.customer') plan = [['customerReminder', () => stepCustomerReminder(env, deps, job)]];
     else if (/^reservation\.(created|updated|cancelled)$/.test(job.type)) {
       plan = [['adminNotify', () => stepAdminNotify(env, deps, job, reservation)], ['calendar', () => stepCalendar(env, deps, job)]];
-    } else plan = [];
+    } else if (job.type === 'line.bound') plan = [['adminNotify', () => stepAdminNotify(env, deps, job, reservation)]];
+    else plan = [];
     for (const [name, run] of plan) {
       if (steps[name] && !String(steps[name]).startsWith('error')) continue; // 已完成的步驟不重做（避免重複通知）
       steps[name] = await run();
