@@ -1595,7 +1595,9 @@ const server = http.createServer(async (req, res) => {
           item.statusLabel=data.statusLabel; item.otherStatus=String(data.otherStatus||'').trim();
           item.updatedAt=new Date().toISOString();
         }
-        await queueWrite(RESERVATIONS_FILE,reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();
+        // 客人資料先更新，預約與客人由同一次並行同步寫入（原本兩次依序同步）
+        upsertCustomerFromReservation(item);
+        await queueWrite(RESERVATIONS_FILE,reservations); invalidateCalendarCaches();
         if(integrationEvent) await emitAdminReservationEvent(integrationEvent,item);
         return json(res,200,{ok:true,reservation:item});
       }
@@ -1606,7 +1608,8 @@ const server = http.createServer(async (req, res) => {
         const reservations=readJson(RESERVATIONS_FILE,[]); const item=reservations.find(x=>x.id===id);
         if(!item) return json(res,404,{error:'找不到預約'});
         item.tags=[...new Set(tags)].slice(0,30); item.updatedAt=new Date().toISOString();
-        await queueWrite(RESERVATIONS_FILE,reservations);
+        // 先寫本機、再同步同一人的標籤（syncPersonTags 直接讀寫本機檔），最後只做一次並行同步
+        atomicWrite(RESERVATIONS_FILE,reservations);
         const synced=syncPersonTags(item.name,item.birthDate,item.tags);
         item.tags=[...synced];
         upsertCustomerFromReservation(item); await flushStorage();
@@ -1634,9 +1637,10 @@ const server = http.createServer(async (req, res) => {
         if (!item) return json(res, 404, { error: '找不到預約' });
         item.myNote = normalizeNote(data.myNote);
         item.updatedAt = new Date().toISOString();
+        // 客人歷史也會顯示備註，先更新再由同一次並行同步寫入，避免留下未同步的狀態
+        upsertCustomerFromReservation(item);
         await queueWrite(RESERVATIONS_FILE, reservations);
         invalidateCalendarCaches();
-        upsertCustomerFromReservation(item);
         return json(res, 200, { ok: true, reservation: item });
       }
       const match = u.pathname.match(/^\/api\/admin\/reservations\/([^/]+)\/cancel$/);
