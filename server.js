@@ -1010,7 +1010,7 @@ const server = http.createServer(async (req, res) => {
       const state = crypto.randomBytes(16).toString('base64url');
       const nonce = crypto.randomBytes(16).toString('base64url');
       const cookie = signLineToken({ s: state, n: nonce, exp: Date.now() + 10 * 60 * 1000 });
-      const auth = new URL(`${LINE_LOGIN.apiBase}/oauth2/v2.1/authorize`);
+      const auth = new URL(`${LINE_LOGIN.authBase}/oauth2/v2.1/authorize`);
       auth.search = new URLSearchParams({ response_type: 'code', client_id: LINE_LOGIN.channelId, redirect_uri: LINE_LOGIN.redirectUri,
         state, scope: 'openid profile', nonce, bot_prompt: 'normal' }).toString();
       res.writeHead(302, { Location: auth.toString(), 'Set-Cookie': `line_login_state=${cookie}; HttpOnly; Secure; SameSite=Lax; Path=/auth/line; Max-Age=600` });
@@ -1901,6 +1901,8 @@ const LINE_LOGIN = {
   get secret() { return process.env.LINE_LOGIN_CHANNEL_SECRET || ''; },
   redirectUri: `${process.env.PUBLIC_BASE_URL || 'https://ronnie-s-witchery-corner.onrender.com'}/auth/line/callback`,
   apiBase: process.env.LINE_API_BASE || 'https://api.line.me',
+  // 授權頁在 access.line.me（與 token／verify 的 api.line.me 不同主機）
+  authBase: process.env.LINE_AUTH_BASE || 'https://access.line.me',
 };
 const LINE_BINDINGS_FILE = path.join(DATA_DIR, 'line_bindings.json');
 const usedLineTickets = new Map();   // jti → 過期時間（單次使用；重啟後清空，票據 15 分鐘內仍有效，風險極低）
