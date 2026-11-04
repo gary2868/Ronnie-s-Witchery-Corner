@@ -381,9 +381,9 @@ async function flushStorageNow() {
   const failed = results.find(r => r.status === 'rejected');
   if (failed) throw failed.reason;
 }
-async function enqueueIntegrationJob(type, reservation) {
+async function enqueueIntegrationJob(type, reservation, extra = {}) {
   if (STORAGE_MODE !== 'supabase') return;
-  const payload = { reservation, eventType:type, emittedAt:new Date().toISOString() };
+  const payload = { reservation, eventType:type, emittedAt:new Date().toISOString(), ...extra };
   const dedupeKey = `${type}:${reservation.id}:${reservation.updatedAt || reservation.createdAt}`;
   await supabaseRequest('integration_jobs','POST',{id:crypto.randomUUID(),type,reservation_id:reservation.id,payload,status:'pending',attempts:0,run_after:new Date().toISOString(),dedupe_key:dedupeKey,created_at:new Date().toISOString()},'?on_conflict=dedupe_key');
 }
@@ -1194,9 +1194,15 @@ const server = http.createServer(async (req, res) => {
       await flushStorage();   // 通常已在上面完成（待同步清單為空，不發出請求）；保留作為殘留重試
       // 預約已儲存：以下附加動作失敗不影響結果（綁定碼失敗時回傳 null，客人頁面會自動隱藏綁定提示）
       // 綁定碼與整合任務彼此獨立，並行寫入（原本依序等待，各多一次網路往返）
+      // LINE 登入：先保存綁定；成功才標記為已綁定（管理員通知會合併成一則「已綁定LINE官方」）
+      let lineBound = false;
+      if (lineUserId) {
+        try { await saveLineReservationBinding(item.id, lineUserId); lineBound = true; }
+        catch (error) { console.warn('[line-login] save binding failed (reminders will not be sent for this booking):', error.message); }
+      }
       const [lineBindCode] = await Promise.all([
         lineUserId ? Promise.resolve(null) : bestEffortIntegration('line bind token', () => createLineBindToken(item)),
-        bestEffortIntegration('enqueue reservation.created', () => enqueueIntegrationJob('reservation.created', item)),
+        bestEffortIntegration('enqueue reservation.created', () => enqueueIntegrationJob('reservation.created', item, lineBound ? { lineBound: true } : {})),
       ]);
       if (lineBindCode) {
         // 綁定碼跟著預約走：存在 app_state.reservation_meta（不改 reservations 的 19 欄），供查詢頁與後台顯示
@@ -1210,16 +1216,11 @@ const server = http.createServer(async (req, res) => {
       // 喚醒 Worker 只是加速：任務已寫入資料庫，Worker 排程最遲 5 分鐘內會撿到。不阻塞客人的回應。
       notifyWorkerWakeup().catch(() => {});
       if (lineUserId) {
-        try {
-          await saveLineReservationBinding(item.id, lineUserId);
-          usedLineTickets.set(lineJti, Date.now() + 30 * 60 * 1000);
-          for (const [jti, exp] of usedLineTickets) if (exp < Date.now()) usedLineTickets.delete(jti);
-          await bestEffortIntegration('enqueue line.bound', () => enqueueIntegrationJob('line.bound', item));
-        } catch (error) {
-          console.warn('[line-login] save binding failed (reminders will not be sent for this booking):', error.message);
-        }
+        // 票據僅在預約成功後才標記為已用
+        usedLineTickets.set(lineJti, Date.now() + 30 * 60 * 1000);
+        for (const [jti, exp] of usedLineTickets) if (exp < Date.now()) usedLineTickets.delete(jti);
       }
-      return json(res, 201, { reservation: item, officialUrl: CONFIG.officialUrl, lineBindCode, lineBound: !!lineUserId });
+      return json(res, 201, { reservation: item, officialUrl: CONFIG.officialUrl, lineBindCode, lineBound });
     }
     const manageMatch = u.pathname.match(/^\/api\/manage\/reservations\/([^/]+)\/(cancel|update)$/);
     if (req.method === 'PATCH' && manageMatch) {
