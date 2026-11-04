@@ -350,7 +350,15 @@ async function syncDataset(key, data) {
   }
 }
 
+let syncLock = Promise.resolve();
+// 所有 Supabase 同步排隊執行：同一時間只允許一次同步。兩次同步重疊會造成重複鍵（customers_pkey），
+// 導致同步失敗、本機與資料庫不一致。
 async function flushStorage() {
+  const run = syncLock.then(flushStorageNow);
+  syncLock = run.catch(() => {});
+  return run;
+}
+async function flushStorageNow() {
   if (STORAGE_MODE !== 'supabase') return;
 
   const keys = [...dirtyDatasets];
@@ -1102,6 +1110,9 @@ const server = http.createServer(async (req, res) => {
         date: data.date, startTime: serviceSlots[0], endTime: fromMinutes(toMinutes(serviceSlots[serviceSlots.length - 1]) + CONFIG.slotMinutes),
         serviceSlots, slots: blocked, status: 'CONFIRMED', createdAt: now, updatedAt: now, cancelledAt: null
       };
+      // 快照：同步失敗時還原本機狀態（否則本機會留下一筆未同步、無通知的幻影預約，佔用時段）
+      const snapshotReservations = JSON.parse(JSON.stringify(reservations));
+      const snapshotCustomers = readJson(CUSTOMERS_FILE, []);
       reservations.push(item);
       // 先更新客人檔（標記為待同步），再由同一次 flush 並行同步預約與客人兩張表，而不是一張接一張
       upsertCustomerFromReservation(item);
@@ -1111,9 +1122,16 @@ const server = http.createServer(async (req, res) => {
       } catch (syncError) {
         // 短期修法：資料庫同步失敗 → 不回 500（客人會誤以為系統壞掉），改回 503 並明確告知「預約未確認」。
         // 注意：本機檔案已寫入（atomicWrite 先於 flushStorage），所以這筆可能仍存在；客人重試若遇到「時段已占用」，代表上一筆其實已成立。
-        console.warn('[booking] supabase sync failed; booking not confirmed to client:', syncError.message);
+        console.warn('[booking] supabase sync failed; booking rolled back locally:', syncError.message);
+        try {
+          atomicWrite(RESERVATIONS_FILE, snapshotReservations);
+          atomicWrite(CUSTOMERS_FILE, snapshotCustomers);
+          invalidateCalendarCaches();
+        } catch (restoreError) {
+          console.error('[booking] local rollback failed:', restoreError.message);
+        }
         return json(res, 503, {
-          error: '系統目前無法確認您的預約，請稍後再試。若稍後重試時顯示此時段已被預約，請聯絡店家確認是否已成立。',
+          error: '系統目前無法確認您的預約，請稍後再試。',
           code: 'SYNC_FAILED'
         });
       }
@@ -1595,7 +1613,9 @@ const server = http.createServer(async (req, res) => {
           item.statusLabel=data.statusLabel; item.otherStatus=String(data.otherStatus||'').trim();
           item.updatedAt=new Date().toISOString();
         }
-        await queueWrite(RESERVATIONS_FILE,reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();
+        // 客人資料先更新，預約與客人由同一次並行同步寫入（原本兩次依序同步）
+        upsertCustomerFromReservation(item);
+        await queueWrite(RESERVATIONS_FILE,reservations); invalidateCalendarCaches();
         if(integrationEvent) await emitAdminReservationEvent(integrationEvent,item);
         return json(res,200,{ok:true,reservation:item});
       }
@@ -1606,7 +1626,8 @@ const server = http.createServer(async (req, res) => {
         const reservations=readJson(RESERVATIONS_FILE,[]); const item=reservations.find(x=>x.id===id);
         if(!item) return json(res,404,{error:'找不到預約'});
         item.tags=[...new Set(tags)].slice(0,30); item.updatedAt=new Date().toISOString();
-        await queueWrite(RESERVATIONS_FILE,reservations);
+        // 先寫本機、再同步同一人的標籤（syncPersonTags 直接讀寫本機檔），最後只做一次並行同步
+        atomicWrite(RESERVATIONS_FILE,reservations);
         const synced=syncPersonTags(item.name,item.birthDate,item.tags);
         item.tags=[...synced];
         upsertCustomerFromReservation(item); await flushStorage();
@@ -1634,9 +1655,10 @@ const server = http.createServer(async (req, res) => {
         if (!item) return json(res, 404, { error: '找不到預約' });
         item.myNote = normalizeNote(data.myNote);
         item.updatedAt = new Date().toISOString();
+        // 客人歷史也會顯示備註，先更新再由同一次並行同步寫入，避免留下未同步的狀態
+        upsertCustomerFromReservation(item);
         await queueWrite(RESERVATIONS_FILE, reservations);
         invalidateCalendarCaches();
-        upsertCustomerFromReservation(item);
         return json(res, 200, { ok: true, reservation: item });
       }
       const match = u.pathname.match(/^\/api\/admin\/reservations\/([^/]+)\/cancel$/);

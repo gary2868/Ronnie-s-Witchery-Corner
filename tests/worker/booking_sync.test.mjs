@@ -33,7 +33,7 @@ describe('預約同步失敗 → 503（短期修法）', () => {
     assert.equal(r.json.code, 'SYNC_FAILED');
     assert.match(r.json.error, /無法確認您的預約/);
     assert.match(r.json.error, /請稍後再試/);
-    assert.match(r.json.error, /此時段已被預約.*聯絡店家/, '必須提醒客人重試時的衝突可能代表已成立');
+    assert.doesNotMatch(r.json.error, /已被預約/, '503 不得再提示已被預約（本機已還原）');
   });
 
   it('故障排除後，客人重試可成功（同步補上）', async () => {
