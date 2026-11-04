@@ -353,7 +353,7 @@ async function syncDataset(key, data) {
 let syncLock = Promise.resolve();
 // 所有 Supabase 同步排隊執行：同一時間只允許一次同步。兩次同步重疊會造成重複鍵（customers_pkey），
 // 導致同步失敗、本機與資料庫不一致。
-function flushStorage() {
+async function flushStorage() {
   const run = syncLock.then(flushStorageNow);
   syncLock = run.catch(() => {});
   return run;
