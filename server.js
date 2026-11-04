@@ -120,11 +120,20 @@ function normalizeRemoteDataset(key, value) {
 }
 /** 已完成 LINE 綁定的預約 id 集合（讀 app_state 的 line_bind:* 列）。讀取失敗回傳空集合，不影響查詢。 */
 async function loadBoundReservationIds() {
-  if (STORAGE_MODE !== 'supabase') return new Set();
+  const ids = new Set();
+  if (STORAGE_MODE !== 'supabase') {
+    for (const k of Object.keys(readJson(LINE_BINDINGS_FILE, {}))) ids.add(k);
+    return ids;
+  }
   try {
     const rows = await supabaseRequest('app_state', 'GET', null, '?select=value&key=like.line_bind:*');
-    return new Set((rows || []).map(r => r && r.value && r.value.reservationId).filter(Boolean));
-  } catch (error) { console.warn('Bind status unavailable; continuing:', error.message); return new Set(); }
+    for (const r of rows || []) if (r && r.value && r.value.reservationId) ids.add(r.value.reservationId);
+  } catch (error) { console.warn('Bind status unavailable; continuing:', error.message); }
+  try {
+    const rows = await supabaseRequest('app_state', 'GET', null, '?select=key&key=like.line_reservation:*');
+    for (const r of rows || []) if (r && r.key) ids.add(String(r.key).slice('line_reservation:'.length));
+  } catch (error) { console.warn('LINE login bind status unavailable; continuing:', error.message); }
+  return ids;
 }
 async function loadReservationMetaFromSupabase() {
   if (STORAGE_MODE !== 'supabase') return {};
@@ -996,6 +1005,44 @@ const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const ip = req.socket.remoteAddress || 'unknown';
   try {
+    if (req.method === 'GET' && u.pathname === '/auth/line/start') {
+      if (!LINE_LOGIN.secret) return json(res, 503, { error: 'LINE 登入尚未設定' });
+      const state = crypto.randomBytes(16).toString('base64url');
+      const nonce = crypto.randomBytes(16).toString('base64url');
+      const cookie = signLineToken({ s: state, n: nonce, exp: Date.now() + 10 * 60 * 1000 });
+      const auth = new URL(`${LINE_LOGIN.apiBase}/oauth2/v2.1/authorize`);
+      auth.search = new URLSearchParams({ response_type: 'code', client_id: LINE_LOGIN.channelId, redirect_uri: LINE_LOGIN.redirectUri,
+        state, scope: 'openid profile', nonce, bot_prompt: 'normal' }).toString();
+      res.writeHead(302, { Location: auth.toString(), 'Set-Cookie': `line_login_state=${cookie}; HttpOnly; Secure; SameSite=Lax; Path=/auth/line; Max-Age=600` });
+      return res.end();
+    }
+    if (req.method === 'GET' && u.pathname === '/auth/line/callback') {
+      const clearCookie = 'line_login_state=; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/auth/line';
+      const fail = code => { res.writeHead(302, { Location: `/?line_error=${code}`, 'Set-Cookie': clearCookie }); return res.end(); };
+      const saved = verifyLineToken(parseCookieHeader(req).line_login_state);
+      if (!saved || !saved.exp || saved.exp < Date.now()) return fail('expired');
+      const code = u.searchParams.get('code');
+      if (!code || u.searchParams.get('state') !== saved.s) return fail('state');
+      try {
+        const tokenRes = await fetch(`${LINE_LOGIN.apiBase}/oauth2/v2.1/token`, { method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: LINE_LOGIN.redirectUri,
+            client_id: LINE_LOGIN.channelId, client_secret: LINE_LOGIN.secret }) });
+        const tokenJson = await tokenRes.json().catch(() => ({}));
+        if (!tokenRes.ok || !tokenJson.id_token) return fail('token');
+        const verifyRes = await fetch(`${LINE_LOGIN.apiBase}/oauth2/v2.1/verify`, { method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ id_token: tokenJson.id_token, client_id: LINE_LOGIN.channelId, nonce: saved.n }) });
+        const claims = await verifyRes.json().catch(() => ({}));
+        if (!verifyRes.ok || String(claims.aud) !== String(LINE_LOGIN.channelId) || claims.nonce !== saved.n || !claims.sub) return fail('verify');
+        const ticket = signLineToken({ u: claims.sub, exp: Date.now() + 15 * 60 * 1000, j: crypto.randomUUID() });
+        res.writeHead(302, { Location: `/?line_ticket=${encodeURIComponent(ticket)}`, 'Set-Cookie': clearCookie });
+        return res.end();
+      } catch (error) {
+        console.warn('[line-login] callback failed:', error.message);
+        return fail('network');
+      }
+    }
     if (req.method === 'GET' && u.pathname === '/api/config') {
       return json(res, 200, {
         services: CONFIG.services.filter(x => x.active).sort((a,b)=>a.sortOrder-b.sortOrder),
@@ -1074,6 +1121,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && u.pathname === '/api/reservations') {
       const data = await readBody(req);
+      // LINE 登入票據（可選）：有效才會綁定本次建立的預約；失敗直接拒絕，不建立預約
+      let lineUserId = null, lineJti = null;
+      if (data.lineTicket) {
+        const t = verifyLineToken(data.lineTicket);
+        if (!t || !t.u || !t.j || !t.exp || t.exp < Date.now()) return json(res, 400, { error: 'LINE 登入已過期，請重新登入或改用綁定碼', code: 'LINE_TICKET_INVALID' });
+        if (usedLineTickets.has(t.j)) return json(res, 409, { error: '此 LINE 登入已使用，請重新登入', code: 'LINE_TICKET_USED' });
+        lineUserId = t.u; lineJti = t.j;
+      }
       const name = normalizeName(data.name);
       const birthDate = normalizeBirthDate(data.birthDate);
       const phone = normalizePhone(data.phone);
@@ -1140,7 +1195,7 @@ const server = http.createServer(async (req, res) => {
       // 預約已儲存：以下附加動作失敗不影響結果（綁定碼失敗時回傳 null，客人頁面會自動隱藏綁定提示）
       // 綁定碼與整合任務彼此獨立，並行寫入（原本依序等待，各多一次網路往返）
       const [lineBindCode] = await Promise.all([
-        bestEffortIntegration('line bind token', () => createLineBindToken(item)),
+        lineUserId ? Promise.resolve(null) : bestEffortIntegration('line bind token', () => createLineBindToken(item)),
         bestEffortIntegration('enqueue reservation.created', () => enqueueIntegrationJob('reservation.created', item)),
       ]);
       if (lineBindCode) {
@@ -1154,7 +1209,17 @@ const server = http.createServer(async (req, res) => {
       }
       // 喚醒 Worker 只是加速：任務已寫入資料庫，Worker 排程最遲 5 分鐘內會撿到。不阻塞客人的回應。
       notifyWorkerWakeup().catch(() => {});
-      return json(res, 201, { reservation: item, officialUrl: CONFIG.officialUrl, lineBindCode });
+      if (lineUserId) {
+        try {
+          await saveLineReservationBinding(item.id, lineUserId);
+          usedLineTickets.set(lineJti, Date.now() + 15 * 60 * 1000);
+          for (const [jti, exp] of usedLineTickets) if (exp < Date.now()) usedLineTickets.delete(jti);
+          await bestEffortIntegration('enqueue line.bound', () => enqueueIntegrationJob('line.bound', item));
+        } catch (error) {
+          console.warn('[line-login] save binding failed (reminders will not be sent for this booking):', error.message);
+        }
+      }
+      return json(res, 201, { reservation: item, officialUrl: CONFIG.officialUrl, lineBindCode, lineBound: !!lineUserId });
     }
     const manageMatch = u.pathname.match(/^\/api\/manage\/reservations\/([^/]+)\/(cancel|update)$/);
     if (req.method === 'PATCH' && manageMatch) {
@@ -1825,6 +1890,55 @@ function dateRangeISO(start, end) {
     d = new Date(Date.parse(d + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
   }
   return out;
+}
+
+/* ───────── LINE Login（預約時綁定 LINE；6 碼流程保留）─────────
+ * 綁定對象：這次建立的預約本身（不依電話）。票據為 HMAC 簽章，15 分鐘有效、只能使用一次，
+ * 只能用於建立「本次登入者自己的」新預約，不能綁定既有預約。
+ */
+const LINE_LOGIN = {
+  channelId: process.env.LINE_LOGIN_CHANNEL_ID || '2012360576',
+  get secret() { return process.env.LINE_LOGIN_CHANNEL_SECRET || ''; },
+  redirectUri: `${process.env.PUBLIC_BASE_URL || 'https://ronnie-s-witchery-corner.onrender.com'}/auth/line/callback`,
+  apiBase: process.env.LINE_API_BASE || 'https://api.line.me',
+};
+const LINE_BINDINGS_FILE = path.join(DATA_DIR, 'line_bindings.json');
+const usedLineTickets = new Map();   // jti → 過期時間（單次使用；重啟後清空，票據 15 分鐘內仍有效，風險極低）
+function lineHmac(data) {
+  return crypto.createHmac('sha256', 'line-login:' + LINE_LOGIN.secret).update(data).digest('base64url');
+}
+function signLineToken(payload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return body + '.' + lineHmac(body);
+}
+function verifyLineToken(token) {
+  const [body, sig] = String(token || '').split('.');
+  if (!body || !sig) return null;
+  const expect = lineHmac(body);
+  if (sig.length !== expect.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return null;
+  try { return JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); } catch { return null; }
+}
+function parseCookieHeader(req) {
+  const out = {};
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+  }
+  return out;
+}
+async function saveLineReservationBinding(reservationId, userId) {
+  const value = { userId, boundAt: new Date().toISOString(), source: 'login' };
+  if (STORAGE_MODE === 'supabase') {
+    await supabaseRequest('app_state', 'POST', { key: `line_reservation:${reservationId}`, value, updated_at: value.boundAt },
+      '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
+    return;
+  }
+  const all = readJson(LINE_BINDINGS_FILE, {});
+  all[reservationId] = value;
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = `${LINE_BINDINGS_FILE}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(all, null, 2), 'utf8');
+  fs.renameSync(tmp, LINE_BINDINGS_FILE);
 }
 
 async function startServer() {
