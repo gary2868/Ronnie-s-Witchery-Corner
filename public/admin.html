@@ -132,6 +132,23 @@ h1{font-size:21px}
 #importConfirmModal button{min-width:90px}
 .tag{display:inline-block;padding:2px 8px;border-radius:12px;border:1px solid #c8b6d9;margin:2px;font-size:.85em}
 .statusChoice.selected{outline:2px solid currentColor}
+
+.custHistory{width:100%;flex-basis:100%}
+.svcMain{flex:1 1 240px;min-width:0}
+.svcNums{flex:0 0 150px}
+.svcSide{flex:0 0 auto}
+@media(max-width:800px){
+  .serviceRow{flex-direction:column;align-items:stretch;gap:4px}
+  .svcMain,.svcNums,.svcSide{flex:none;width:100%}
+  .svcMain input.svcName,.svcMain input.svcDesc{width:100%;box-sizing:border-box}
+  .svcMain label,.svcNums label{display:block;margin-top:4px}
+  .svcNums{display:flex;gap:12px}
+  .svcNums > div{flex:1 1 0}
+  .svcNums input{width:100%;box-sizing:border-box}
+  .svcSide{display:flex;justify-content:flex-end;align-items:flex-end;margin-top:2px}
+  .svcSide label{display:flex;align-items:center;gap:4px;font-size:12px;margin:0}
+  .svcSide input.svcActive{width:20px;height:20px;margin:0}
+}
 </style>
 </head>
 <body>
@@ -711,7 +728,7 @@ function renderBookingCard(x) {
       </div>
 
       <div class="bookingActions">
-        <button class="secondary" onclick="showDetail('${eid}')">查看詳細</button>
+        <button class="secondary" onclick="showDetail('${eid}')">查看資料</button>
         ${
           !isCancelled && !isExpired
             ? `<button class="danger" onclick="cancelBooking('${eid}')">取消預約</button>`
@@ -1091,6 +1108,10 @@ async function loadCustomers() {
   }
 }
 
+function toggleCustHistory(btn) {
+  const box = btn.closest('.customer').querySelector('.custHistory');
+  box.classList.toggle('hidden');
+}
 function renderCustomers() {
   const q = $('customerSearch').value.trim().toLowerCase();
 
@@ -1104,14 +1125,14 @@ function renderCustomers() {
     ? `<div class="customerList">${list.map(c => {
         const tags = Array.isArray(c.tags) ? c.tags : [];
 
-        return `<div class="customer">
-          <b>${esc(c.name)}</b>
+        return `<div class="customer booking">
+          <div><b>${esc(c.name)}</b>
           ${tags.map(t => `<span class="tag">${esc(t)} <button type="button" class="tagDelete" onclick="deleteCustomerTag('${encodeURIComponent(c.id)}','${encodeURIComponent(t)}')">×</button></span>`).join(' ')}
           <br>電話：${esc(c.phone || '—')}
           <br>生日：${esc(c.birthDate || '—')}
-          <br><button class="danger" onclick="deleteCustomer('${encodeURIComponent(c.id)}')">刪除客人</button>
-          <details>
-            <summary>查看詳細資料</summary>
+          </div>
+          <div class="bookingActions"><button class="secondary" onclick="toggleCustHistory(this)">查看資料</button><button class="danger" onclick="deleteCustomer('${encodeURIComponent(c.id)}')">刪除檔案</button></div>
+          <div class="custHistory hidden">
             <div class="history">
               <div>
                 <input id="ct-${esc(c.id)}" placeholder="新增標籤">
@@ -1136,7 +1157,7 @@ function renderCustomers() {
                 </div>`;
               }).join('<hr>') || '尚無歷史預約'}
             </div>
-          </details>
+          </div>
         </div>`;
       }).join('')}</div>`
     : '目前沒有符合的客人檔案。';
@@ -1371,15 +1392,15 @@ let serviceRows = [];   // 畫面上目前的服務列（已儲存＋尚未儲�
 function serviceRowHtml(s, i) {
   const isNew = !s.id;
   return `<div class="booking serviceRow" data-idx="${i}" data-id="${esc(s.id || '')}">
-    <div style="flex:1 1 240px;min-width:0">
+    <div class="svcMain">
       <label>服務名稱</label><input class="svcName" maxlength="40" value="${esc(s.name || '')}">
-      <label>說明（前台顯示，留空則自動產生）</label><input class="svcDesc" maxlength="120" value="${esc(s.description || '')}">
+      <label>說明</label><input class="svcDesc" maxlength="120" value="${esc(s.description || '')}">
     </div>
-    <div style="flex:0 0 150px">
+    <div class="svcNums">
       <label>時長（分鐘）</label><input class="svcDuration" type="number" min="30" max="480" step="30" value="${esc(s.durationMinutes ?? 60)}">
       <label>價格（NT$）</label><input class="svcPrice" type="number" min="0" max="99999" step="1" value="${esc(s.price ?? 0)}">
     </div>
-    <div style="flex:0 0 auto">
+    <div class="svcSide">
       <label><input class="svcActive" type="checkbox" ${s.active === false ? '' : 'checked'}> 前台顯示</label>
       ${isNew ? '<button type="button" class="danger" onclick="removeNewServiceRow(this)">移除</button>' : ''}
     </div>
