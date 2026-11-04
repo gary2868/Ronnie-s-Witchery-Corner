@@ -991,7 +991,7 @@ function serveStatic(req, res, pathname) {
   const full = path.resolve(root, `.${safe}`);
   if (!full.startsWith(root + path.sep)) return json(res, 403, { error: 'Forbidden' });
   if (!fs.existsSync(full) || fs.statSync(full).isDirectory()) return json(res, 404, { error: 'Not found' });
-  const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8' };
+  const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.webp': 'image/webp' };
   res.writeHead(200, { 'Content-Type': types[path.extname(full)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
   fs.createReadStream(full).pipe(res);
 }
@@ -1035,11 +1035,11 @@ const server = http.createServer(async (req, res) => {
           body: new URLSearchParams({ id_token: tokenJson.id_token, client_id: LINE_LOGIN.channelId, nonce: saved.n }) });
         const claims = await verifyRes.json().catch(() => ({}));
         if (!verifyRes.ok || String(claims.aud) !== String(LINE_LOGIN.channelId) || claims.nonce !== saved.n || !claims.sub) return fail('verify');
-        const ticket = signLineToken({ u: claims.sub, exp: Date.now() + 15 * 60 * 1000, j: crypto.randomUUID() });
+        const ticket = signLineToken({ u: claims.sub, exp: Date.now() + 30 * 60 * 1000, j: crypto.randomUUID() });
         res.writeHead(302, { Location: `/?line_ticket=${encodeURIComponent(ticket)}`, 'Set-Cookie': clearCookie });
         return res.end();
       } catch (error) {
-        console.warn('[line-login] callback failed:', error.message);
+        console.warn('[line-login] callback failed:', error.message, error.cause ? String(error.cause.code || error.cause.message || error.cause) : '');
         return fail('network');
       }
     }
@@ -1212,7 +1212,7 @@ const server = http.createServer(async (req, res) => {
       if (lineUserId) {
         try {
           await saveLineReservationBinding(item.id, lineUserId);
-          usedLineTickets.set(lineJti, Date.now() + 15 * 60 * 1000);
+          usedLineTickets.set(lineJti, Date.now() + 30 * 60 * 1000);
           for (const [jti, exp] of usedLineTickets) if (exp < Date.now()) usedLineTickets.delete(jti);
           await bestEffortIntegration('enqueue line.bound', () => enqueueIntegrationJob('line.bound', item));
         } catch (error) {

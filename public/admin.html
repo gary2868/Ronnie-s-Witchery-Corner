@@ -694,6 +694,7 @@ function renderBookingCard(x) {
     <div class="booking ${isCancelled ? 'cancelled' : ''} ${isExpired ? 'expired' : ''}">
       <div>
         <b>${esc(x.name)}</b>
+        ${x.lineBound ? '<span class="status">已綁定 LINE</span>' : ''}
         ${
           Array.isArray(x.tags) && x.tags.length
             ? x.tags.map(t => `<span class="tag">${esc(t)}</span>`).join(' ')
@@ -884,7 +885,7 @@ async function showDetail(id) {
           <div class="detailLabel">電話</div><div>${esc(x.phone || '—')}</div>
           <div class="detailLabel">服務</div><div>${esc(x.serviceName)}（${esc(x.durationMinutes)} 分鐘）</div>
           <div class="detailLabel">預約時間</div><div>${esc(String(x.date || '').slice(0,10))} ${esc(x.startTime || '')}–${esc(x.endTime || '')}</div>
-          <div class="detailLabel">綁定碼</div><div>${x.lineBindCode ? `<span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;letter-spacing:.1em">${esc(x.lineBindCode)}</span>${x.lineBound ? '（已綁定）' : ''}` : '—'}</div>
+          <div class="detailLabel">綁定碼</div><div>${x.lineBindCode ? `<span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;letter-spacing:.1em">${esc(x.lineBindCode)}</span>${x.lineBound ? '（已綁定）' : ''}` : (x.lineBound ? '已綁定 LINE（登入綁定，無綁定碼）' : '—')}</div>
           <div class="detailLabel">客人的備註</div><div>${esc(x.note || '—')}</div>
           <div class="detailLabel">我的備註</div>
           <div><textarea id="myNoteInput" rows="4" maxlength="500" style="width:100%;box-sizing:border-box;resize:vertical">${noteValue}</textarea></div>
