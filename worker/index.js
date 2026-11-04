@@ -261,8 +261,8 @@ async function replyOrPush(env, deps, ev, text) {
   catch (error) { logEvent(deps, { task: 'line_push_fallback_failed', error: String(error.message || error) }); }
 }
 
-export function adminMessage(type, r) {
-  const head = { 'reservation.created': '🆕 新預約', 'reservation.updated': '✏️ 預約已修改', 'reservation.cancelled': '❌ 預約已取消', 'line.bound': '🔗 顧客已用 LINE 登入綁定提醒' }[type] || '📌 預約異動';
+export function adminMessage(type, r, opts = {}) {
+  const head = type === 'reservation.created' && opts.lineBound ? '🆕 新預約(已綁定LINE官方)' : ({ 'reservation.created': '🆕 新預約', 'reservation.updated': '✏️ 預約已修改', 'reservation.cancelled': '❌ 預約已取消', 'line.bound': '🔗 顧客已用 LINE 登入綁定提醒' }[type] || '📌 預約異動');
   const lines = [
     head,
     `姓名：${r.name}`,
@@ -423,7 +423,7 @@ async function stepAdminNotify(env, deps, job, r) {
   if (m === 'off') return 'skipped:off';
   assertConfig(env, 'FEATURE_ADMIN_NOTIFY');
   if (deps.now() - Date.parse(job.created_at || 0) > STALE_JOB_MS) return 'skipped:stale';
-  const text = adminMessage(job.type, r);
+  const text = adminMessage(job.type, r, { lineBound: !!(job.payload && job.payload.lineBound) });
   if (m === 'dry') { logEvent(deps, { task: 'admin_notify', dry: true, to: 'ADMIN', text }); return 'dry'; }
   await linePush(env, deps, env.ADMIN_LINE_USER_ID, text, `admin:${job.dedupe_key || job.id}`);
   return 'sent';

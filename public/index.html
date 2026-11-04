@@ -52,7 +52,7 @@ label{display:block;margin:14px 0 7px;color:#5e5268}input{width:100%;padding:13p
 .copyBindBtn{margin-left:8px;padding:4px 10px;font-size:.85em}
 .bindHint{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fff3cd;border:2px solid #e0a800;color:#7a4a00;font-weight:700;line-height:1.6}
 .lineSlot{display:flex;align-items:center;margin-left:auto;margin-right:12px}.lineSlot img{height:46px;width:auto;cursor:pointer;border-radius:10px}.lineSlot .bindHint{margin:0}
-@media(max-width:800px){.lineSlot{order:3;width:100%;margin:10px 0 0}.lineSlot img{width:100%;height:auto}}
+@media(max-width:800px){.lineSlot{order:3;width:100%;margin:10px 0 0;justify-content:center}.lineSlot img{height:44px;width:auto}}
 </style>
 </head>
 <body>
@@ -293,7 +293,7 @@ function clearLineTicket(){ sessionStorage.removeItem('lineTicket'); state.lineT
 function renderLineSlot(){
   const slot=$('lineLoginSlot'); if(!slot) return;
   if(getLineTicket()) slot.innerHTML='<div class="bindHint">已完成 LINE 登入：送出預約時會綁定 LINE 提醒</div>';
-  else slot.innerHTML='<img id="lineLoginImg" src="/btn_login_base.png" alt="用 LINE 登入並綁定" role="button" tabindex="0">';
+  else slot.innerHTML='<picture><source media="(max-width:800px)" srcset="/btn_login_1x32dp.png"><img id="lineLoginImg" src="/btn_login_2x32dp.png" alt="用 LINE 登入並綁定" role="button" tabindex="0"></picture>';
   const img=$('lineLoginImg'); if(img){ img.onclick=startLineLogin; img.onkeydown=e=>{ if(e.key==='Enter') startLineLogin(); }; }
 }
 async function restoreLineReturn(){
