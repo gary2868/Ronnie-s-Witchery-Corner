@@ -147,7 +147,7 @@ async function loadReservationMetaFromSupabase() {
   }
 }
 
-async function saveReservationMetaToSupabase(reservations) {
+async function saveReservationMetaToSupabase(reservations, previousValue = null) {
   if (STORAGE_MODE !== 'supabase') return;
   const value = {};
   for (const item of (Array.isArray(reservations) ? reservations : [])) {
@@ -157,6 +157,12 @@ async function saveReservationMetaToSupabase(reservations) {
     if (item.otherStatus) meta.otherStatus = item.otherStatus;
     if (Array.isArray(item.tags) && item.tags.length) meta.tags = item.tags;
     if (Object.keys(meta).length) value[item.id] = meta;
+  }
+  // 綁定碼只存在中繼資料中，每次覆寫都必須保留（否則下一次寫入就會清掉）
+  const ids = new Set((Array.isArray(reservations) ? reservations : []).map(r => r.id));
+  for (const [id, prev] of Object.entries(previousValue || {})) {
+    if (!prev || !prev.lineBindCode || !ids.has(id)) continue;
+    value[id] = { ...(value[id] || {}), lineBindCode: prev.lineBindCode, ...(prev.lineBindCodeAt ? { lineBindCodeAt: prev.lineBindCodeAt } : {}) };
   }
   // 單一 upsert 取代 DELETE + POST：同一筆 key 原子覆寫，少一次往返
   await supabaseRequest('app_state', 'POST', {
@@ -330,7 +336,7 @@ async function syncReservationsIncremental(rows, mapped) {
   const failures = [metaRes, ...writeRes].filter(r => r.status === 'rejected').map(r => r.reason);
   let metaAttempted = false;
   if (!failures.length) {
-    try { metaAttempted = true; await saveReservationMetaToSupabase(rows); }
+    try { metaAttempted = true; await saveReservationMetaToSupabase(rows, (previousMeta && previousMeta[0] && previousMeta[0].value) || {}); }
     catch (error) { failures.push(error); }
   }
 
@@ -436,6 +442,8 @@ async function syncDataset(key, data) {
 }
 
 let syncLock = Promise.resolve();
+// 任何需要與資料同步互斥的寫入（例如綁定碼寫入中繼資料）都經過同一把鎖
+function withSyncLock(fn) { const run = syncLock.then(fn); syncLock = run.catch(() => {}); return run; }
 // 所有 Supabase 同步排隊執行：同一時間只允許一次同步。兩次同步重疊會造成重複鍵（customers_pkey），
 // 導致同步失敗、本機與資料庫不一致。
 async function flushStorage() {
@@ -1283,10 +1291,14 @@ const server = http.createServer(async (req, res) => {
       if (lineBindCode) {
         // 綁定碼跟著預約走：存在 app_state.reservation_meta（不改 reservations 的 19 欄），供查詢頁與後台顯示
         try {
-          const metaNow = await loadReservationMetaFromSupabase();
-          metaNow[item.id] = { ...(metaNow[item.id] || {}), lineBindCode, lineBindCodeAt: new Date().toISOString() };
-          await supabaseRequest('app_state', 'POST', { key: 'reservation_meta', value: metaNow, updated_at: new Date().toISOString() },
-            '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
+          await withSyncLock(async () => {
+            // 嚴格讀取：讀取失敗直接丟出，不寫入（否則會用空內容覆寫整個中繼資料）
+            const rows = await supabaseRequest('app_state', 'GET', null, '?select=value&key=eq.reservation_meta&limit=1');
+            const metaNow = (rows && rows[0] && rows[0].value && typeof rows[0].value === 'object' && !Array.isArray(rows[0].value)) ? rows[0].value : {};
+            metaNow[item.id] = { ...(metaNow[item.id] || {}), lineBindCode, lineBindCodeAt: new Date().toISOString() };
+            await supabaseRequest('app_state', 'POST', { key: 'reservation_meta', value: metaNow, updated_at: new Date().toISOString() },
+              '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
+          });
         } catch (error) { console.warn('[integration] store bind code in meta failed (non-fatal):', error.message); }
       }
       // 喚醒 Worker 只是加速：任務已寫入資料庫，Worker 排程最遲 5 分鐘內會撿到。不阻塞客人的回應。
