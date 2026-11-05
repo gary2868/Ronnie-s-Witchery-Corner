@@ -27,7 +27,7 @@ describe('預約同步失敗 → 503（短期修法）', () => {
 
   it('Supabase 寫入失敗 → 回 503（不是 500），訊息說明預約未確認，並提示重試', async () => {
     const slot = await openSlot(3);
-    m.S.fail.push({ re: /^POST app_state/, times: 99 });   // 讓 flushStorage 持續失敗
+    m.S.fail.push({ re: /^POST reservations/, times: 99 });   // 讓 flushStorage 持續失敗
     const r = await api('POST', '/api/reservations', body(slot), { auth: false });
     assert.equal(r.status, 503, `應為 503，實際 ${r.status}：${JSON.stringify(r.json)}`);
     assert.equal(r.json.code, 'SYNC_FAILED');
@@ -38,7 +38,7 @@ describe('預約同步失敗 → 503（短期修法）', () => {
 
   it('故障排除後，客人重試可成功（同步補上）', async () => {
     const slot = await openSlot(6);
-    m.S.fail.push({ re: /^POST app_state/, times: 99 });
+    m.S.fail.push({ re: /^POST reservations/, times: 99 });
     const first = await api('POST', '/api/reservations', body(slot), { auth: false });
     assert.equal(first.status, 503);
     m.S.fail = [];                                          // 故障恢復

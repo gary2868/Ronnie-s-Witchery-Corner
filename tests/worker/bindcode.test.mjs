@@ -78,7 +78,7 @@ describe('綁定碼跟著預約走（Supabase 模式）', () => {
     // 這裡只注入「單次」失敗，讓它落在綁定碼之後的 meta 寫入，驗證 meta 失敗不會讓預約變成 500。
     const slot = await openSlot(18);
     const before = m.S.log.filter(l => /^POST app_state/.test(l)).length;
-    m.S.fail.push({ re: /^POST app_state/, skip: 1, times: 1 });   // 放行 flushStorage 的第一次寫入，失敗在 meta 寫入
+    m.S.fail.push({ re: /^POST app_state/, skip: 0, times: 1 });   // 放行 flushStorage 的第一次寫入，失敗在 meta 寫入
     const r = await book(slot, '0911-666-666');
     assert.equal(r.status, 201, JSON.stringify(r.json));
     assert.ok(r.json.reservation.id, '預約必須已存在');
