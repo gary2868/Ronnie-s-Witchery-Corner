@@ -49,9 +49,13 @@ export const REQUIRED_CONFIG = {
   FEATURE_LINE_BINDING: [...SB, 'LINE_CHANNEL_SECRET', 'LINE_CHANNEL_ACCESS_TOKEN'],
 };
 /** 回傳「已啟用（on/dry）但缺少」的設定名稱（只回傳名稱，絕不輸出值）。force=true 時不看開關。 */
+function requiredFor(env, feature) {
+  if (feature === 'FEATURE_CALENDAR' && env.GOOGLE_AUTH === 'service') return [...SB, 'GOOGLE_SERVICE_ACCOUNT_JSON', 'GOOGLE_CALENDAR_ID'];
+  return REQUIRED_CONFIG[feature];
+}
 export function missingConfig(env, feature, force = false) {
   if (!force && featureMode(env, feature) === 'off') return [];
-  return REQUIRED_CONFIG[feature].filter(k => !String(env[k] ?? '').trim());
+  return requiredFor(env, feature).filter(k => !String(env[k] ?? '').trim());
 }
 function assertConfig(env, feature, force = false) {
   const miss = missingConfig(env, feature, force);
@@ -286,19 +290,55 @@ export function reminderMessage(r) {
 
 /* ───────────────────────── Google ───────────────────────── */
 
-async function googleToken(env, deps) {
+/* 服務帳戶（GOOGLE_AUTH=service）：用私鑰簽署 JWT 取得權杖，不需要使用者登入，也沒有 7 天限制。
+ * 日曆須分享給服務帳戶的 email（權限：變更活動）。舊的 refresh token 路徑保留作為回退。 */
+const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+function b64url(bytes) {
+  let s = ''; for (const b of new Uint8Array(bytes)) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64urlStr(str) { return b64url(new TextEncoder().encode(str)); }
+function pemToDer(pem) {
+  const body = String(pem).replace(/-----BEGIN [^-]+-----/g, '').replace(/-----END [^-]+-----/g, '').replace(/\s+/g, '');
+  const bin = atob(body); const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out.buffer;
+}
+function serviceAccount(env) {
+  let sa;
+  try { sa = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON || ''); }
+  catch { throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON 不是有效的 JSON（請把整份金鑰 JSON 上傳為機密）'); }
+  if (!sa || !sa.client_email || !sa.private_key) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON 缺少 client_email 或 private_key');
+  return { email: sa.client_email, key: String(sa.private_key).replace(/\\n/g, '\n') };
+}
+async function signServiceJwt(env, nowMs) {
+  const { email, key } = serviceAccount(env);
+  const iat = Math.floor(nowMs / 1000);
+  const header = b64urlStr(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claims = b64urlStr(JSON.stringify({ iss: email, scope: GOOGLE_CALENDAR_SCOPE, aud: GOOGLE_TOKEN_URL, iat, exp: iat + 3600 }));
+  const cryptoKey = await crypto.subtle.importKey('pkcs8', pemToDer(key), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, new TextEncoder().encode(`${header}.${claims}`));
+  return `${header}.${claims}.${b64url(sig)}`;
+}
+export async function googleToken(env, deps) {
   const c = deps.state.googleToken;
   if (c && c.exp > deps.now() + 60e3) return c.value;
-  const res = await tfetch(env, deps, env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token', {
+  const tokenUrl = env.GOOGLE_TOKEN_URL || GOOGLE_TOKEN_URL;
+  const serviceMode = env.GOOGLE_AUTH === 'service';
+  const form = serviceMode
+    ? { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: await signServiceJwt(env, deps.now()) }
+    : { client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, refresh_token: env.GOOGLE_REFRESH_TOKEN, grant_type: 'refresh_token' };
+  const res = await tfetch(env, deps, tokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET,
-      refresh_token: env.GOOGLE_REFRESH_TOKEN, grant_type: 'refresh_token',
-    }).toString(),
+    body: new URLSearchParams(form).toString(),
   });
   if (!res.ok && (res.status === 400 || res.status === 401)) deps.state.googleAuthFailed = true;   // 讓本次執行結束時通知管理者
-  if (!res.ok) throw transientError(`Google token ${res.status}（若為 invalid_grant，代表授權已失效，請重新取得 refresh token）: ${(await res.text()).slice(0, 200)}`, { status: res.status });
+  if (!res.ok) {
+    const hint = serviceMode ? '服務帳戶金鑰或權限錯誤（請確認日曆已分享給服務帳戶）' : '若為 invalid_grant，代表授權已失效，請重新取得 refresh token';
+    throw transientError(`Google token ${res.status}（${hint}）: ${(await res.text()).slice(0, 200)}`, { status: res.status });
+  }
   const j = await res.json();
   deps.state.googleToken = { value: j.access_token, exp: deps.now() + (Number(j.expires_in) || 3600) * 1000 };
   return j.access_token;
