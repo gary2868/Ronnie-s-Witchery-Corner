@@ -35,13 +35,21 @@ async function runScenario(name, configure, data = [{id:'new-1',name:'new'}]) {
         return sorted.slice(offset, offset + limit).map(r=>({...r}));
       }
       if (method === 'DELETE') {
-        if (table === 'app_state') state.tables.app_state = state.tables.app_state.filter(r=>r.key!=='reservation_meta');
-        else state.tables[table] = [];
+        if (table === 'app_state') { state.tables.app_state = state.tables.app_state.filter(r => r.key !== 'reservation_meta'); return []; }
+        const inList = /id=in\.\((.*)\)/.exec(decodeURIComponent(query));
+        if (inList) { const ids = inList[1].split(',').map(s => s.trim()); state.tables[table] = state.tables[table].filter(r => !ids.includes(String(r.id))); return []; }
+        state.tables[table] = [];
         return [];
       }
       if (method === 'POST') {
-        if (table === 'app_state') state.tables.app_state.push(...(Array.isArray(body)?body:[body]));
-        else state.tables[table].push(...(Array.isArray(body)?body:[body]));
+        const rows = Array.isArray(body) ? body : [body];
+        const store = table === 'app_state' ? state.tables.app_state : state.tables[table];
+        const key = table === 'app_state' ? 'key' : 'id';
+        const upsert = query.includes('on_conflict');
+        for (const row of rows) {
+          const idx = upsert ? store.findIndex(r => r[key] === row[key]) : -1;
+          if (idx >= 0) store[idx] = { ...row }; else store.push({ ...row });
+        }
         return body;
       }
       throw new Error('unsupported method');
@@ -70,7 +78,7 @@ async function runScenario(name, configure, data = [{id:'new-1',name:'new'}]) {
   assert.match(r.error.message,/previous data restored/); assert.deepEqual(r.state.tables.reservations.map(x=>x.id),['old-1']); assert.deepEqual(r.state.tables.app_state[0].value,{old:{myNote:'old note'}});
   console.log('PASS metadata failure: data and reservation metadata restored');
 
-  r = await runScenario('rollback incomplete reported',s=>{s.fail['POST:reservations']=1; s.fail['POST:app_state']=1;});
+  r = await runScenario('rollback incomplete reported',s=>{s.fail['POST:reservations']=2; s.fail['POST:app_state']=1;});
   assert.match(r.error.message,/rollback incomplete/); assert.equal(r.state.dirty.has('reservations'),true);
   console.log('PASS rollback incomplete: explicit error reported; dirty flag retained');
 
