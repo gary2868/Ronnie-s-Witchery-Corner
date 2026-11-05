@@ -53,6 +53,12 @@ label{display:block;margin:14px 0 7px;color:#5e5268}input{width:100%;padding:13p
 .bindHint{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fff3cd;border:2px solid #e0a800;color:#7a4a00;font-weight:700;line-height:1.6}
 .lineSlot{display:flex;align-items:center;margin-left:auto;margin-right:12px}.lineSlot img{height:46px;width:auto;cursor:pointer;border-radius:10px}.lineSlot .bindHint{margin:0}
 @media(max-width:800px){.lineSlot{order:3;width:100%;margin:10px 0 0;justify-content:center}.lineSlot img{height:44px;width:auto}}
+
+.pageNotice{position:fixed;inset:0;background:rgba(40,30,50,.38);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
+.pageNotice.hidden{display:none}
+.pageNoticeCard{background:#fff;border-radius:18px;padding:22px 24px 18px;min-width:240px;max-width:min(88vw,420px);box-shadow:0 18px 40px rgba(40,30,50,.25)}
+.pageNoticeText{white-space:pre-line;color:#2b2233;line-height:1.7;margin-bottom:16px;font-size:16px}
+.pageNoticeOk{display:block;margin-left:auto;padding:9px 22px;border:0;border-radius:12px;background:linear-gradient(135deg,#9b7fc4,#6f5590);color:#fff;font-weight:700;cursor:pointer}
 </style>
 </head>
 <body>
@@ -72,6 +78,26 @@ label{display:block;margin:14px 0 7px;color:#5e5268}input{width:100%;padding:13p
 </main>
 </div>
 <script>
+(function () {
+  // 以頁面內提示框取代瀏覽器原生 alert（原生框會顯示網址）；不阻塞執行，與原本的 alert 用法相容
+  function ensureNotice() {
+    let box = document.getElementById('pageNotice');
+    if (box) return box;
+    box = document.createElement('div');
+    box.id = 'pageNotice';
+    box.className = 'pageNotice hidden';
+    box.innerHTML = '<div class="pageNoticeCard"><div class="pageNoticeText" id="pageNoticeText"></div><button type="button" class="pageNoticeOk" id="pageNoticeOk">確定</button></div>';
+    document.body.appendChild(box);
+    document.getElementById('pageNoticeOk').onclick = () => box.classList.add('hidden');
+    return box;
+  }
+  window.alert = function (message) {
+    const box = ensureNotice();
+    document.getElementById('pageNoticeText').textContent = String(message ?? '');
+    box.classList.remove('hidden');
+  };
+})();
+
 const state={config:null,date:null,service:null,startTime:null,slots:[],month:null,admin:false,lastReservation:null,preservedSelection:null};
 function persistTimeSelection(){
   try{
