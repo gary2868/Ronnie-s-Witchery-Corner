@@ -302,78 +302,121 @@ async function readSupabaseSnapshot(table) {
   }
 }
 
-/* ───────── 預約表增量同步（只送出變動的列）─────────
- * reservationRows：上次成功寫入資料庫的列（id → 列）。啟動後第一次同步讀取一次完整快照作為基準。
- * 每次只 upsert 新增或內容改變的列，並刪除已不存在的列。失敗時只把這次碰到的列還原成基準；
- * 回滾本身失敗時清空基準，下次同步會重新讀取完整快照（自我修復）。
+/* ───────── 增量同步（預約／客人／公休）─────────
+ * 每張表保存「上次成功寫入資料庫的列」作為基準（啟動後第一次同步讀取一次完整快照）。
+ * 每次只 upsert 新增或內容改變的列，並刪除已不存在的列；失敗時只還原這次碰到的列。
+ * 回滾失敗時清空基準，下次同步重新讀取快照（自我修復）。
+ * 中繼資料（備註／狀態／標籤／綁定碼）：內容沒有變動就不寫入；基準保存在記憶體中（單一伺服器程序，
+ * 所有寫入中繼資料的路徑都會更新基準）。
  */
-let reservationRows = null;
+const incBaseline = { reservations: null, customers: null, closures: null };
+let reservationMetaBaseline = null;   // 上次成功寫入（或讀取）的中繼資料內容；null = 尚未讀取
 const pickKeys = (o, keys) => Object.fromEntries(keys.map(k => [k, o[k]]));
-const canonicalRow = o => JSON.stringify(Object.keys(o).sort().map(k => [k, o[k]]));
+const sortDeep = v => Array.isArray(v) ? v.map(sortDeep) : (v && typeof v === 'object') ? Object.fromEntries(Object.keys(v).sort().map(k => [k, sortDeep(v[k])])) : v;
+const canonicalRow = o => JSON.stringify(sortDeep(o));   // 深層排序：jsonb 會重排鍵順序，避免誤判為變動
+const canonicalMeta = v => JSON.stringify(sortDeep(v ?? {}));
 const chunkList = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
 const idInFilter = ids => `?id=in.(${ids.map(id => encodeURIComponent(String(id))).join(',')})`;
 
-async function syncReservationsIncremental(rows, mapped) {
-  const table = 'reservations';
-  if (!reservationRows) {
-    const remote = await readSupabaseSnapshot(table);          // 基準：只在第一次或回滾失敗後讀取
-    reservationRows = new Map(remote.map(r => [r.id, r]));
-  }
-  const before = reservationRows;
+function incPlan(before, mapped) {
   const after = new Map(mapped.map(r => [r.id, r]));
   const upserts = mapped.filter(r => !before.has(r.id) || canonicalRow(pickKeys(before.get(r.id), Object.keys(r))) !== canonicalRow(r));
   const deletes = [...before.keys()].filter(id => !after.has(id));
   const touched = [...new Set([...upserts.map(r => r.id), ...deletes])];
-
-  // 同時進行：讀取目前設定（供回滾）、列的寫入、列的刪除
-  const metaP = supabaseRequest('app_state', 'GET', null, '?select=*&key=eq.reservation_meta');
-  const writeP = [
-    ...chunkList(upserts, 500).map(c => supabaseRequest(table, 'POST', c, '?on_conflict=id', 'resolution=merge-duplicates,return=representation')),
-    ...chunkList(deletes, 100).map(c => supabaseRequest(table, 'DELETE', null, idInFilter(c))),
+  return { upserts, deletes, touched };
+}
+async function incWrite(table, plan, extra = []) {
+  const writes = [
+    ...chunkList(plan.upserts, 500).map(c => supabaseRequest(table, 'POST', c, '?on_conflict=id', 'resolution=merge-duplicates,return=representation')),
+    ...chunkList(plan.deletes, 100).map(c => supabaseRequest(table, 'DELETE', null, idInFilter(c))),
+    ...extra,
   ];
-  const [metaRes, ...writeRes] = await Promise.allSettled([metaP, ...writeP]);
-  const previousMeta = metaRes.status === 'fulfilled' ? metaRes.value : null;
-  const failures = [metaRes, ...writeRes].filter(r => r.status === 'rejected').map(r => r.reason);
-  let metaAttempted = false;
-  if (!failures.length) {
-    try { metaAttempted = true; await saveReservationMetaToSupabase(rows, (previousMeta && previousMeta[0] && previousMeta[0].value) || {}); }
-    catch (error) { failures.push(error); }
-  }
-
-  if (!failures.length) {
-    for (const id of deletes) before.delete(id);
-    for (const r of upserts) before.set(r.id, r);
-    dirtyDatasets.delete('reservations');
-    return;
-  }
-
-  // 失敗：只還原這次碰到的列（新增的刪除，既有的改回基準內容），並還原設定
-  const syncError = failures[0];
-  const rollbackErrors = [];
+  const settled = await Promise.allSettled(writes);
+  return settled.filter(r => r.status === 'rejected').map(r => r.reason);
+}
+async function incRollback(table, before, touched) {
   const newIds = touched.filter(id => !before.has(id));
-  const restoreRows = touched.filter(id => before.has(id)).map(id => before.get(id));
+  const restore = touched.filter(id => before.has(id)).map(id => before.get(id));
+  const errors = [];
   try {
     await Promise.all([
       ...chunkList(newIds, 100).map(c => supabaseRequest(table, 'DELETE', null, idInFilter(c))),
-      ...chunkList(restoreRows, 500).map(c => supabaseRequest(table, 'POST', c, '?on_conflict=id', 'resolution=merge-duplicates,return=representation')),
+      ...chunkList(restore, 500).map(c => supabaseRequest(table, 'POST', c, '?on_conflict=id', 'resolution=merge-duplicates,return=representation')),
     ]);
-  } catch (rollbackError) {
-    rollbackErrors.push(`${table}: ${rollbackError.message}`);
-  }
-  if (metaAttempted) {
-    try {
-      if (previousMeta === null) throw new Error('reservation_meta before-state unavailable');
-      await supabaseRequest('app_state', 'DELETE', null, '?key=eq.reservation_meta');
-      if (previousMeta.length) await supabaseRequest('app_state', 'POST', previousMeta);
-    } catch (rollbackError) {
-      rollbackErrors.push(`app_state.reservation_meta: ${rollbackError.message}`);
-    }
-  }
+  } catch (error) { errors.push(`${table}: ${error.message}`); }
+  return errors;
+}
+function incCommit(before, plan, mapped) {
+  for (const id of plan.deletes) before.delete(id);
+  for (const r of plan.upserts) before.set(r.id, r);
+}
+async function incBaselineFor(key, table) {
+  if (!incBaseline[key]) incBaseline[key] = new Map((await readSupabaseSnapshot(table)).map(r => [r.id, r]));
+  return incBaseline[key];
+}
+async function syncIncrementalTable(key, table, mapped) {
+  const before = await incBaselineFor(key, table);
+  const plan = incPlan(before, mapped);
+  const failures = await incWrite(table, plan);
+  if (!failures.length) { incCommit(before, plan, mapped); dirtyDatasets.delete(key); return; }
+  const rollbackErrors = await incRollback(table, before, plan.touched);
   if (rollbackErrors.length) {
-    reservationRows = null;   // 基準不可靠：下次同步重新讀取完整快照
-    throw new Error(`Supabase sync failed: ${syncError.message}; rollback incomplete: ${rollbackErrors.join('; ')}`);
+    incBaseline[key] = null;   // 基準不可靠：下次同步重新讀取完整快照
+    throw new Error(`Supabase sync failed: ${failures[0].message}; rollback incomplete: ${rollbackErrors.join('; ')}`);
   }
-  throw new Error(`Supabase sync failed; previous data restored: ${syncError.message}`);
+  throw new Error(`Supabase sync failed; previous data restored: ${failures[0].message}`);
+}
+
+function buildReservationMeta(reservations, previousValue) {
+  const value = {};
+  for (const item of reservations) {
+    const meta = {};
+    if (item.myNote) meta.myNote = item.myNote;
+    if (item.statusLabel) meta.statusLabel = item.statusLabel;
+    if (item.otherStatus) meta.otherStatus = item.otherStatus;
+    if (Array.isArray(item.tags) && item.tags.length) meta.tags = item.tags;
+    if (Object.keys(meta).length) value[item.id] = meta;
+  }
+  // 綁定碼只存在中繼資料中，每次覆寫都必須保留（只要預約仍存在）
+  const ids = new Set(reservations.map(r => r.id));
+  for (const [id, prev] of Object.entries(previousValue || {})) {
+    if (!prev || !prev.lineBindCode || !ids.has(id)) continue;
+    value[id] = { ...(value[id] || {}), lineBindCode: prev.lineBindCode, ...(prev.lineBindCodeAt ? { lineBindCodeAt: prev.lineBindCodeAt } : {}) };
+  }
+  return value;
+}
+async function syncReservationsIncremental(rows, mapped) {
+  const table = 'reservations', key = 'reservations';
+  const before = await incBaselineFor(key, table);
+  if (reservationMetaBaseline === null) {
+    const metaRows = await supabaseRequest('app_state', 'GET', null, '?select=*&key=eq.reservation_meta');
+    const v = metaRows && metaRows[0] && metaRows[0].value;
+    reservationMetaBaseline = (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+  }
+  const plan = incPlan(before, mapped);
+  const nextMeta = buildReservationMeta(rows, reservationMetaBaseline);
+  const metaChanged = canonicalMeta(nextMeta) !== canonicalMeta(reservationMetaBaseline);
+  const metaWrite = metaChanged ? [supabaseRequest('app_state', 'POST', { key: 'reservation_meta', value: nextMeta, updated_at: new Date().toISOString() },
+    '?on_conflict=key', 'resolution=merge-duplicates,return=representation')] : [];
+  const failures = await incWrite(table, plan, metaWrite);
+  if (!failures.length) {
+    incCommit(before, plan, mapped);
+    reservationMetaBaseline = nextMeta;
+    dirtyDatasets.delete(key);
+    return;
+  }
+  const errors = await incRollback(table, before, plan.touched);
+  if (metaChanged) {
+    try {
+      await supabaseRequest('app_state', 'POST', { key: 'reservation_meta', value: reservationMetaBaseline, updated_at: new Date().toISOString() },
+        '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
+    } catch (error) { errors.push(`app_state.reservation_meta: ${error.message}`); }
+  }
+  if (errors.length) {
+    incBaseline[key] = null; reservationMetaBaseline = null;   // 基準不可靠：下次同步重新讀取
+    throw new Error(`Supabase sync failed: ${failures[0].message}; rollback incomplete: ${errors.join('; ')}`);
+  }
+  throw new Error(`Supabase sync failed; previous data restored: ${failures[0].message}`);
 }
 
 async function syncDataset(key, data) {
@@ -394,6 +437,8 @@ async function syncDataset(key, data) {
       : rows.map(supabaseRowFromClosure);
 
   if (key === 'reservations') return syncReservationsIncremental(rows, mapped);
+  if (key === 'customers') return syncIncrementalTable('customers', 'customers', mapped);
+  if (key === 'closures') return syncIncrementalTable('closures', 'closures', mapped);
 
   // Read the complete pre-sync snapshot before any destructive write.
   // If this read fails, leave the remote table untouched.
@@ -1298,6 +1343,7 @@ const server = http.createServer(async (req, res) => {
             metaNow[item.id] = { ...(metaNow[item.id] || {}), lineBindCode, lineBindCodeAt: new Date().toISOString() };
             await supabaseRequest('app_state', 'POST', { key: 'reservation_meta', value: metaNow, updated_at: new Date().toISOString() },
               '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
+            if (reservationMetaBaseline !== null) reservationMetaBaseline = metaNow;   // 同步基準跟上資料庫
           });
         } catch (error) { console.warn('[integration] store bind code in meta failed (non-fatal):', error.message); }
       }

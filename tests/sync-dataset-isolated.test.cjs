@@ -25,6 +25,7 @@ async function runScenario(name, configure, data = [{id:'new-1',name:'new'}]) {
     },
     supabaseRequest: async function(table, method='GET', body=null, query='') {
       state.calls.push({table,method,query});
+      if (table === 'app_state' && method === 'POST' && state.fail.metaPost) { state.fail.metaPost = false; throw new Error('injected metaPost failure'); }
       const failKey = `${method}:${table}`;
       if (state.fail[failKey]) { state.fail[failKey]--; throw new Error(`injected ${failKey} failure`); }
       if (method === 'GET') {
