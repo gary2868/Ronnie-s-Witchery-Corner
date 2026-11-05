@@ -12,6 +12,7 @@ crons = ["*/5 * * * *", "0 19 * * *", "0 20 * * *"]
 
 # 非機密設定（機密請用 `wrangler secret put` 或 Cloudflare 儀表板設定，不要寫在這裡）
 [vars]
+GOOGLE_AUTH = "service"
 # 所有功能預設關閉；建議順序：dry → on，逐項啟用（見 docs/INTEGRATION_SETUP_AND_ROLLBACK.md）
 FEATURE_ADMIN_NOTIFY = "on"
 FEATURE_REMINDERS = "on"

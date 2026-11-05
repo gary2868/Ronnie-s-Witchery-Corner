@@ -296,6 +296,80 @@ async function readSupabaseSnapshot(table) {
   }
 }
 
+/* ───────── 預約表增量同步（只送出變動的列）─────────
+ * reservationRows：上次成功寫入資料庫的列（id → 列）。啟動後第一次同步讀取一次完整快照作為基準。
+ * 每次只 upsert 新增或內容改變的列，並刪除已不存在的列。失敗時只把這次碰到的列還原成基準；
+ * 回滾本身失敗時清空基準，下次同步會重新讀取完整快照（自我修復）。
+ */
+let reservationRows = null;
+const pickKeys = (o, keys) => Object.fromEntries(keys.map(k => [k, o[k]]));
+const canonicalRow = o => JSON.stringify(Object.keys(o).sort().map(k => [k, o[k]]));
+const chunkList = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
+const idInFilter = ids => `?id=in.(${ids.map(id => encodeURIComponent(String(id))).join(',')})`;
+
+async function syncReservationsIncremental(rows, mapped) {
+  const table = 'reservations';
+  if (!reservationRows) {
+    const remote = await readSupabaseSnapshot(table);          // 基準：只在第一次或回滾失敗後讀取
+    reservationRows = new Map(remote.map(r => [r.id, r]));
+  }
+  const before = reservationRows;
+  const after = new Map(mapped.map(r => [r.id, r]));
+  const upserts = mapped.filter(r => !before.has(r.id) || canonicalRow(pickKeys(before.get(r.id), Object.keys(r))) !== canonicalRow(r));
+  const deletes = [...before.keys()].filter(id => !after.has(id));
+  const touched = [...new Set([...upserts.map(r => r.id), ...deletes])];
+
+  // 同時進行：讀取目前設定（供回滾）、列的寫入、列的刪除
+  const metaP = supabaseRequest('app_state', 'GET', null, '?select=*&key=eq.reservation_meta');
+  const writeP = [
+    ...chunkList(upserts, 500).map(c => supabaseRequest(table, 'POST', c, '?on_conflict=id', 'resolution=merge-duplicates,return=representation')),
+    ...chunkList(deletes, 100).map(c => supabaseRequest(table, 'DELETE', null, idInFilter(c))),
+  ];
+  const [metaRes, ...writeRes] = await Promise.allSettled([metaP, ...writeP]);
+  const previousMeta = metaRes.status === 'fulfilled' ? metaRes.value : null;
+  const failures = [metaRes, ...writeRes].filter(r => r.status === 'rejected').map(r => r.reason);
+  let metaAttempted = false;
+  if (!failures.length) {
+    try { metaAttempted = true; await saveReservationMetaToSupabase(rows); }
+    catch (error) { failures.push(error); }
+  }
+
+  if (!failures.length) {
+    for (const id of deletes) before.delete(id);
+    for (const r of upserts) before.set(r.id, r);
+    dirtyDatasets.delete('reservations');
+    return;
+  }
+
+  // 失敗：只還原這次碰到的列（新增的刪除，既有的改回基準內容），並還原設定
+  const syncError = failures[0];
+  const rollbackErrors = [];
+  const newIds = touched.filter(id => !before.has(id));
+  const restoreRows = touched.filter(id => before.has(id)).map(id => before.get(id));
+  try {
+    await Promise.all([
+      ...chunkList(newIds, 100).map(c => supabaseRequest(table, 'DELETE', null, idInFilter(c))),
+      ...chunkList(restoreRows, 500).map(c => supabaseRequest(table, 'POST', c, '?on_conflict=id', 'resolution=merge-duplicates,return=representation')),
+    ]);
+  } catch (rollbackError) {
+    rollbackErrors.push(`${table}: ${rollbackError.message}`);
+  }
+  if (metaAttempted) {
+    try {
+      if (previousMeta === null) throw new Error('reservation_meta before-state unavailable');
+      await supabaseRequest('app_state', 'DELETE', null, '?key=eq.reservation_meta');
+      if (previousMeta.length) await supabaseRequest('app_state', 'POST', previousMeta);
+    } catch (rollbackError) {
+      rollbackErrors.push(`app_state.reservation_meta: ${rollbackError.message}`);
+    }
+  }
+  if (rollbackErrors.length) {
+    reservationRows = null;   // 基準不可靠：下次同步重新讀取完整快照
+    throw new Error(`Supabase sync failed: ${syncError.message}; rollback incomplete: ${rollbackErrors.join('; ')}`);
+  }
+  throw new Error(`Supabase sync failed; previous data restored: ${syncError.message}`);
+}
+
 async function syncDataset(key, data) {
   if (STORAGE_MODE !== 'supabase') return;
 
@@ -312,6 +386,8 @@ async function syncDataset(key, data) {
     : key === 'customers'
       ? rows.map(supabaseRowFromCustomer)
       : rows.map(supabaseRowFromClosure);
+
+  if (key === 'reservations') return syncReservationsIncremental(rows, mapped);
 
   // Read the complete pre-sync snapshot before any destructive write.
   // If this read fails, leave the remote table untouched.
