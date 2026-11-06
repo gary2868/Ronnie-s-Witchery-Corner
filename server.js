@@ -337,14 +337,15 @@ async function incWrite(table, plan, extra = []) {
 async function incRollback(table, before, touched) {
   const newIds = touched.filter(id => !before.has(id));
   const restore = touched.filter(id => before.has(id)).map(id => before.get(id));
-  const errors = [];
-  try {
-    await Promise.all([
-      ...chunkList(newIds, 100).map(c => supabaseRequest(table, 'DELETE', null, idInFilter(c))),
-      ...chunkList(restore, 500).map(c => supabaseRequest(table, 'POST', c, '?on_conflict=id', 'resolution=merge-duplicates,return=representation')),
-    ]);
-  } catch (error) { errors.push(`${table}: ${error.message}`); }
-  return errors;
+  const jobs = [
+    ...chunkList(newIds, 100).map((c, n) => ({ label: `${table} DELETE 第 ${n + 1} 批`, run: () => supabaseRequest(table, 'DELETE', null, idInFilter(c)) })),
+    ...chunkList(restore, 500).map((c, n) => ({ label: `${table} POST 第 ${n + 1} 批`, run: () => supabaseRequest(table, 'POST', c, '?on_conflict=id', 'resolution=merge-duplicates,return=representation') })),
+  ];
+  // 等待全部還原請求完成（不因單一失敗提早結束），並逐項記錄失敗的批次
+  const settled = await Promise.allSettled(jobs.map(j => j.run()));
+  return settled
+    .map((r, k) => (r.status === 'rejected' ? `${jobs[k].label}: ${r.reason?.message ?? String(r.reason)}` : null))
+    .filter(Boolean);
 }
 function incCommit(before, plan, mapped) {
   for (const id of plan.deletes) before.delete(id);
