@@ -46,7 +46,7 @@ if (!fs.existsSync(RESERVATIONS_FILE)) fs.writeFileSync(RESERVATIONS_FILE, '[]',
 if (!fs.existsSync(CLOSURES_FILE)) fs.writeFileSync(CLOSURES_FILE, '[]', 'utf8');
 if (!fs.existsSync(CUSTOMERS_FILE)) fs.writeFileSync(CUSTOMERS_FILE, '[]', 'utf8');
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '5144';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
 const sessions = new Map();
 const loginAttempts = new Map();
