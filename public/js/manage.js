@@ -16,7 +16,7 @@ function fallbackCopy(text, done){
   try { document.execCommand('copy'); } catch (e) {} finally { document.body.removeChild(ta); }
   done();
 }
-function renderCurrent(){const r=current;$('currentSummary').innerHTML=`<b>姓名：</b>${esc(r.name)}<br><b>生日：</b>${esc(r.birthDate||'—')}<br><b>電話：</b>${esc(r.phone||'—')}<br><b>服務：</b>${esc(r.serviceName)}（${r.durationMinutes} 分鐘）<br><b>日期：</b>${esc(r.date)}<br><b>時間：</b>${esc(r.startTime)}–${esc(r.endTime)}<br><b>綁定碼：</b>${r.lineBindCode?`<span class="bindCodeText">${esc(r.lineBindCode)}</span><button type="button" class="secondary copyBindBtn" onclick="copyBindCode('${esc(r.lineBindCode)}',this)">複製</button>${r.lineBound?'（已綁定）':''}`:'—'}`}
+function renderCurrent(){const r=current;$('currentSummary').innerHTML=`<b>姓名：</b>${esc(r.name)}<br><b>生日：</b>${esc(r.birthDate||'—')}<br><b>電話：</b>${esc(r.phone||'—')}<br><b>服務：</b>${esc(r.serviceName)}（${r.durationMinutes} 分鐘）<br><b>日期：</b>${esc(r.date)}<br><b>時間：</b>${esc(r.startTime)}–${esc(r.endTime)}<br><b>綁定碼：</b>${r.lineBindCode?`<span class="bindCodeText">${esc(r.lineBindCode)}</span><button type="button" class="secondary copyBindBtn" data-act="copyBindCode" data-args="${esc(JSON.stringify([r.lineBindCode]))}">複製</button>${r.lineBound?'（已綁定）':''}`:'—'}`}
 function showNotice(msg){$('notice').textContent=msg;$('notice').classList.remove('hidden')}
 function selectReservation(i){current=lookupResults[i];$('lookupView').classList.add('hidden');$('manageView').classList.remove('hidden');$('newDate').min=addDays(config.today,1);$('newDate').max=config.maxAdvanceDate;$('newDate').value=current.date<addDays(config.today,1)?addDays(config.today,1):current.date;$('newService').innerHTML=config.services.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}（${s.durationMinutes} 分鐘）</option>`).join('');$('newService').value=current.serviceId;renderCurrent();loadSlots()}
 function renderLookupResults(){let box=$('lookupResults');if(!box){box=document.createElement('div');box.id='lookupResults';$('lookupView').appendChild(box)}box.innerHTML='<h3>找到的預約</h3>';lookupResults.forEach((r,i)=>{const b=document.createElement('button');b.type='button';b.className='secondary';b.style.cssText='display:block;width:100%;margin:8px 0;text-align:left';b.textContent=`${r.date} ${r.startTime}–${r.endTime}｜${r.serviceName}`;b.onclick=()=>selectReservation(i);box.appendChild(b)})}
@@ -32,3 +32,15 @@ async function cancelBooking(){if(!current)return;if(!(await confirmAction('確�
 confirmAction('預約已取消。');}catch(e){alert(e.message)}finally{$('cancelBtn').disabled=false}}
 $('lookupBtn').onclick=lookup;$('newDate').onchange=loadSlots;$('newService').onchange=loadSlots;$('updateBtn').onclick=update;$('cancelBtn').onclick=cancelBooking;$('backLookup').onclick=backToLookup;
 (async()=>{try{config=await api('/api/config')}catch(e){alert(e.message)}})();
+
+// ===== CSP 相容事件委派（取代內嵌 on* 屬性）=====
+const ACTIONS = {
+  goHome: () => { location.href = '/'; },
+  copyBindCode: (el, code) => copyBindCode(code, el),
+};
+document.addEventListener('click', e => {
+  const el = e.target.closest ? e.target.closest('[data-act]') : null;
+  if (!el) return;
+  const fn = ACTIONS[el.dataset.act];
+  if (fn) fn(el, ...JSON.parse(el.dataset.args || '[]'));
+});
