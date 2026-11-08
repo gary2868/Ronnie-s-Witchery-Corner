@@ -25,7 +25,18 @@ async function runScenario(name, configure, data = [{id:'new-1',name:'new'}]) {
     },
     supabaseRequest: async function(table, method='GET', body=null, query='') {
       state.calls.push({table,method,query});
-      if (table === 'app_state' && method === 'POST' && state.fail.metaPost) { state.fail.metaPost = false; throw new Error('injected metaPost failure'); }
+      if ((table === 'app_state' || table.startsWith('rpc/cas_reservation_meta')) && method === 'POST' && state.fail.metaPost) { state.fail.metaPost = false; throw new Error('injected metaPost failure'); }
+      if (table.startsWith('rpc/cas_reservation_meta') && method === 'POST') {
+        const sortK = v => Array.isArray(v) ? v.map(sortK) : (v && typeof v === 'object') ? Object.fromEntries(Object.keys(v).sort().map(k => [k, sortK(v[k])])) : v;
+        const canon = v => JSON.stringify(sortK(v ?? null));
+        const exp = (body && body.p_expected) ?? {}; const nxt = (body && body.p_next) ?? {};
+        const rows = state.tables.app_state;
+        const i = rows.findIndex(r => r.key === 'reservation_meta');
+        if (i < 0) { if (canon(exp) === '{}') { rows.push({ key: 'reservation_meta', value: nxt }); return { status: 'written' }; } return { status: 'missing' }; }
+        if (canon(rows[i].value) === canon(exp)) { rows[i].value = nxt; return { status: 'written' }; }
+        if (canon(rows[i].value) === canon(nxt)) return { status: 'already_current' };
+        return { status: 'conflict', current: rows[i].value };
+      }
       const failKey = `${method}:${table}`;
       if (state.fail[failKey]) { state.fail[failKey]--; throw new Error(`injected ${failKey} failure`); }
       if (method === 'GET') {

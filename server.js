@@ -386,39 +386,85 @@ function buildReservationMeta(reservations, previousValue) {
   }
   return value;
 }
+// ---- 中繼資料 CAS（資料庫函式 cas_reservation_meta）----
+async function casReservationMeta(expected, next) {
+  return supabaseRequest('rpc/cas_reservation_meta', 'POST', { p_expected: expected ?? {}, p_next: next ?? {} }, '', 'return=representation');
+}
+async function readReservationMetaRemoteStrict() {
+  const rows = await supabaseRequest('app_state', 'GET', null, '?select=value&key=eq.reservation_meta&limit=1');
+  const v = rows && rows[0] && rows[0].value;
+  return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+}
+// 逐筆合併：只套用本次改變的預約；其餘保留資料庫目前內容（含外部 writer 的修改）；綁定碼以資料庫為準
+function mergeReservationMetaEntries(current, baseline, next) {
+  // 欄位級合併：只套用本次改變的欄位；其餘欄位保留資料庫目前的值（含外部 writer 的修改）；綁定碼以資料庫為準
+  const out = JSON.parse(JSON.stringify(current ?? {}));
+  const base = baseline ?? {}, want = next ?? {};
+  for (const id of new Set([...Object.keys(base), ...Object.keys(want)])) {
+    const b = base[id], n = want[id];
+    if (canonicalMeta(b) === canonicalMeta(n)) continue;          // 本次沒有變動的預約
+    if (n === undefined) { delete out[id]; continue; }            // 預約已不存在
+    const entry = { ...(out[id] || {}) };
+    const bb = b || {};
+    for (const k of new Set([...Object.keys(bb), ...Object.keys(n)])) {
+      if (k === 'lineBindCode' || k === 'lineBindCodeAt') continue;   // 綁定碼以資料庫目前值為準
+      if (canonicalMeta(bb[k]) === canonicalMeta(n[k])) continue;     // 本次沒有改這個欄位
+      if (n[k] === undefined) delete entry[k]; else entry[k] = n[k];
+    }
+    if (Object.keys(entry).length) out[id] = entry; else delete out[id];
+  }
+  return out;
+}
+async function failAfterDataRollback(key, table, before, plan, error) {
+  const errors = await incRollback(table, before, plan.touched);
+  reservationMetaBaseline = null;     // 中繼資料狀態不確定：下次重新讀取
+  if (errors.length) {
+    incBaseline[key] = null;
+    throw new Error(`Supabase sync failed: ${error.message}; rollback incomplete: ${errors.join('; ')}`);
+  }
+  throw new Error(`Supabase sync failed; previous data restored: ${error.message}`);
+}
+async function casUpdateReservationMetaEntry(reservationId, patch) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const cur = await readReservationMetaRemoteStrict();
+    const next = JSON.parse(JSON.stringify(cur));
+    next[reservationId] = { ...(next[reservationId] || {}), ...patch };
+    const res = await casReservationMeta(cur, next);
+    if (res.status === 'written' || res.status === 'already_current') { reservationMetaBaseline = next; return; }
+    // conflict：外部已修改，重新讀取後重試
+  }
+  reservationMetaBaseline = null;
+  throw new Error('bind code CAS conflict after 3 attempts');
+}
 async function syncReservationsIncremental(rows, mapped) {
   const table = 'reservations', key = 'reservations';
   const before = await incBaselineFor(key, table);
-  if (reservationMetaBaseline === null) {
-    const metaRows = await supabaseRequest('app_state', 'GET', null, '?select=*&key=eq.reservation_meta');
-    const v = metaRows && metaRows[0] && metaRows[0].value;
-    reservationMetaBaseline = (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
-  }
+  if (reservationMetaBaseline === null) reservationMetaBaseline = await readReservationMetaRemoteStrict();   // 讀取失敗：尚未寫入任何資料
   const plan = incPlan(before, mapped);
-  const nextMeta = buildReservationMeta(rows, reservationMetaBaseline);
-  const metaChanged = canonicalMeta(nextMeta) !== canonicalMeta(reservationMetaBaseline);
-  const metaWrite = metaChanged ? [supabaseRequest('app_state', 'POST', { key: 'reservation_meta', value: nextMeta, updated_at: new Date().toISOString() },
-    '?on_conflict=key', 'resolution=merge-duplicates,return=representation')] : [];
-  const failures = await incWrite(table, plan, metaWrite);
-  if (!failures.length) {
-    incCommit(before, plan, mapped);
-    reservationMetaBaseline = nextMeta;
-    dirtyDatasets.delete(key);
-    return;
+  // 1) 先寫預約資料；失敗則只回滾預約資料（中繼資料尚未寫入）
+  const dataFailures = await incWrite(table, plan);
+  if (dataFailures.length) return failAfterDataRollback(key, table, before, plan, dataFailures[0]);
+  // 2) 中繼資料以 CAS 寫入：衝突時以 current 重新合併後重試（最多 3 次）；RPC 錯誤不重試
+  const baseMeta = reservationMetaBaseline;
+  const localNext = buildReservationMeta(rows, baseMeta);
+  if (canonicalMeta(localNext) !== canonicalMeta(baseMeta)) {
+    let expected = baseMeta, written = false;
+    for (let attempt = 1; attempt <= 3 && !written; attempt++) {
+      const candidate = mergeReservationMetaEntries(expected, baseMeta, localNext);
+      let res;
+      try { res = await casReservationMeta(expected, candidate); }
+      catch (error) { return failAfterDataRollback(key, table, before, plan, error); }
+      if (res.status === 'written' || res.status === 'already_current') { reservationMetaBaseline = candidate; written = true; }
+      else if (res.status === 'conflict') expected = res.current ?? {};
+      else if (res.status === 'missing') expected = {};
+      else return failAfterDataRollback(key, table, before, plan, new Error(`unexpected CAS status ${res.status}`));
+    }
+    if (!written) return failAfterDataRollback(key, table, before, plan, new Error('metadata CAS conflict after 3 attempts'));
   }
-  const errors = await incRollback(table, before, plan.touched);
-  if (metaChanged) {
-    try {
-      await supabaseRequest('app_state', 'POST', { key: 'reservation_meta', value: reservationMetaBaseline, updated_at: new Date().toISOString() },
-        '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
-    } catch (error) { errors.push(`app_state.reservation_meta: ${error.message}`); }
-  }
-  if (errors.length) {
-    incBaseline[key] = null; reservationMetaBaseline = null;   // 基準不可靠：下次同步重新讀取
-    throw new Error(`Supabase sync failed: ${failures[0].message}; rollback incomplete: ${errors.join('; ')}`);
-  }
-  throw new Error(`Supabase sync failed; previous data restored: ${failures[0].message}`);
+  incCommit(before, plan, mapped);
+  dirtyDatasets.delete(key);
 }
+
 
 async function syncDataset(key, data) {
   if (STORAGE_MODE !== 'supabase') return;
@@ -1337,15 +1383,7 @@ const server = http.createServer(async (req, res) => {
       if (lineBindCode) {
         // 綁定碼跟著預約走：存在 app_state.reservation_meta（不改 reservations 的 19 欄），供查詢頁與後台顯示
         try {
-          await withSyncLock(async () => {
-            // 嚴格讀取：讀取失敗直接丟出，不寫入（否則會用空內容覆寫整個中繼資料）
-            const rows = await supabaseRequest('app_state', 'GET', null, '?select=value&key=eq.reservation_meta&limit=1');
-            const metaNow = (rows && rows[0] && rows[0].value && typeof rows[0].value === 'object' && !Array.isArray(rows[0].value)) ? rows[0].value : {};
-            metaNow[item.id] = { ...(metaNow[item.id] || {}), lineBindCode, lineBindCodeAt: new Date().toISOString() };
-            await supabaseRequest('app_state', 'POST', { key: 'reservation_meta', value: metaNow, updated_at: new Date().toISOString() },
-              '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
-            if (reservationMetaBaseline !== null) reservationMetaBaseline = metaNow;   // 同步基準跟上資料庫
-          });
+          await withSyncLock(() => casUpdateReservationMetaEntry(item.id, { lineBindCode, lineBindCodeAt: new Date().toISOString() }));
         } catch (error) { console.warn('[integration] store bind code in meta failed (non-fatal):', error.message); }
       }
       // 喚醒 Worker 只是加速：任務已寫入資料庫，Worker 排程最遲 5 分鐘內會撿到。不阻塞客人的回應。

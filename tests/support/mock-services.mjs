@@ -61,13 +61,31 @@ export async function startMocks(port = 0) {
     return null;
   }
 
+  // ---------- CAS：與 cas_reservation_meta.sql 行為一致 ----------
+  function sortKeysDeep(v) { return Array.isArray(v) ? v.map(sortKeysDeep) : (v && typeof v === 'object') ? Object.fromEntries(Object.keys(v).sort().map(k => [k, sortKeysDeep(v[k])])) : v; }
+  const casCanon = v => JSON.stringify(sortKeysDeep(v ?? null));
+  function casReservationMeta(expected, next) {
+    const exp = expected ?? {};
+    const rows = S.tables.app_state;
+    const i = rows.findIndex(r => r.key === 'reservation_meta');
+    if (i < 0) {
+      if (casCanon(exp) === '{}') { rows.push({ key: 'reservation_meta', value: next, updated_at: new Date().toISOString() }); return { status: 'written' }; }
+      return { status: 'missing' };
+    }
+    const cur = rows[i].value;
+    if (casCanon(cur) === casCanon(exp)) { rows[i].value = next; rows[i].updated_at = new Date().toISOString(); return { status: 'written' }; }
+    if (casCanon(cur) === casCanon(next)) return { status: 'already_current' };
+    return { status: 'conflict', current: cur };
+  }
+
   async function supabase(req, res, u) {
     if (req.headers.apikey !== KEYS.supabase || req.headers.authorization !== 'Bearer ' + KEYS.supabase) return send(res, 401, { message: 'bad key' });
     const table = u.pathname.replace('/rest/v1/', '');
-    if (!(table in S.tables)) return send(res, 404, { code: '42P01', message: 'relation does not exist' });
+    if (!table.startsWith('rpc/') && !(table in S.tables)) return send(res, 404, { code: '42P01', message: 'relation does not exist' });
     const params = [...u.searchParams.entries()];
     const prefer = String(req.headers.prefer || '');
     S.log.push(`${req.method} ${table}${u.search}`);
+    if (S.onRequest) S.onRequest(req.method, table);   // 測試用：請求處理前模擬外部 writer
     for (const d of S.delay) if (d.re.test(`${req.method} ${table}`)) await new Promise(r => setTimeout(r, d.ms));
     for (const f of S.fail) {
       if (!f.re.test(`${req.method} ${table}`)) continue;
@@ -93,6 +111,12 @@ export async function startMocks(port = 0) {
         return send(res, 200, S.deleteReturnsNothing ? [] : gone);      // 模擬：DELETE 不回傳被刪的列
       }
       const body = JSON.parse((await read(req)) || 'null');
+      if (table.startsWith('rpc/')) {
+        if (req.method !== 'POST') return send(res, 405, { message: 'rpc requires POST' });
+        const fn = table.slice(4);
+        if (fn === 'cas_reservation_meta') return send(res, 200, casReservationMeta(body.p_expected, body.p_next));
+        return send(res, 404, { code: 'PGRST202', message: 'Could not find the function public.' + fn });
+      }
       if (req.method === 'PATCH') {
         const err = validateRow(table, body); if (err) return send(res, 400, err);
         const hit = S.tables[table].filter(r => matchRow(r, params));
@@ -299,3 +323,4 @@ export async function startMocks(port = 0) {
     close: () => new Promise(r => { server.close(r); server.closeAllConnections?.(); }),
   };
 }
+
