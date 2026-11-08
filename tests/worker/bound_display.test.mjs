@@ -30,13 +30,13 @@ describe('已綁定的顯示（同一程序持有模擬服務，可直接寫入�
     const id = r.json.reservation.id, code = r.json.lineBindCode;
     assert.match(code, /^[0-9A-F]{6}$/);
 
-    let q = await api('POST', '/api/manage/lookup', { phone }, { auth: false });
+    let q = await api('POST', '/api/manage/lookup', { phone, bookingCode: r.json.reservation.bookingCode }, { auth: false });
     assert.equal(q.json.reservations[0].lineBound, false); assert.equal(q.json.reservations[0].lineBindCode, code);
 
     // 模擬 Worker 完成綁定：寫入 line_bind:* 列（與 Worker 寫入格式相同）
     m.S.tables.app_state.push({ key: 'line_bind:' + phone.replace(/\D/g, ''), value: { userId: 'U_BOUND', boundAt: new Date().toISOString(), reservationId: id, eventId: 'EV1' }, updated_at: 'x' });
 
-    q = await api('POST', '/api/manage/lookup', { phone }, { auth: false });
+    q = await api('POST', '/api/manage/lookup', { phone, bookingCode: r.json.reservation.bookingCode }, { auth: false });
     const row = q.json.reservations.find(x => x.id === id);
     assert.equal(row.lineBound, true, '綁定完成後必須標示已綁定');
     assert.equal(row.lineBindCode, code, '已綁定的碼仍保留（前端加「（已綁定）」）');

@@ -57,12 +57,12 @@ describe('綁定碼跟著預約走（Supabase 模式）', () => {
 
   it('查詢頁（只靠電話）：回傳綁定碼與已綁定旗標；已取消的預約不會出現在查詢結果', async () => {
     const slot = await openSlot(12); const r = await book(slot, '0911-444-444');
-    const q = await api('POST', '/api/manage/lookup', { phone: '0911-444-444' }, { auth: false });
+    const q = await api('POST', '/api/manage/lookup', { phone: '0911-444-444', bookingCode: r.json.reservation.bookingCode }, { auth: false });
     assert.equal(q.status, 200, JSON.stringify(q.json));
     const row = q.json.reservations.find(x => x.id === r.json.reservation.id);
     assert.equal(row.lineBindCode, r.json.lineBindCode); assert.equal(row.lineBound, false);
-    await api('PATCH', `/api/manage/reservations/${r.json.reservation.id}/cancel`, { phone: '0911-444-444' }, { auth: false });
-    const q2 = await api('POST', '/api/manage/lookup', { phone: '0911-444-444' }, { auth: false });
+    await api('PATCH', `/api/manage/reservations/${r.json.reservation.id}/cancel`, { phone: '0911-444-444', bookingCode: r.json.reservation.bookingCode }, { auth: false });
+    const q2 = await api('POST', '/api/manage/lookup', { phone: '0911-444-444', bookingCode: r.json.reservation.bookingCode }, { auth: false });
     assert.ok(!q2.json.reservations || !q2.json.reservations.some(x => x.id === r.json.reservation.id), '已取消的預約不應出現在查詢結果');
   });
 
