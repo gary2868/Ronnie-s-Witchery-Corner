@@ -459,7 +459,7 @@ function renderAccordion(key, title, arr, cardsHtml) {
 
   return `
     <details class="adminAccordion" data-accordion="${key}" ${window.__adminAccordionOpen[key] ? 'open' : ''}
-             ontoggle="window.__adminAccordionOpen['${key}'] = this.open">
+             data-toggle-for="adminAccordion" data-key="${esc(key)}">
       <summary><span>${title}</span><span class="accCount">${arr.length}</span></summary>
       ${cardsHtml(arr)}
     </details>
@@ -492,11 +492,11 @@ function renderBookingCard(x) {
       </div>
 
       <div class="bookingActions">
-        <button class="secondary" onclick="showDetail('${eid}')">查看資料</button>
+        <button class="secondary" data-act="showDetail" data-args="${esc(JSON.stringify([eid]))}">查看資料</button>
         ${
           !isCancelled && !isExpired
-            ? `<button class="danger" onclick="cancelBooking('${eid}')">取消預約</button>`
-            : `<button class="danger" onclick="deleteReservation('${eid}')">刪除</button>`
+            ? `<button class="danger" data-act="cancelBooking" data-args="${esc(JSON.stringify([eid]))}">取消預約</button>`
+            : `<button class="danger" data-act="deleteReservation" data-args="${esc(JSON.stringify([eid]))}">刪除</button>`
         }
       </div>
 
@@ -652,11 +652,11 @@ async function showDetail(id) {
         <div>
           <b>標籤：</b>
           <span id="reservationTags">
-            ${tags.map(t => `<span class="tag">${esc(t)} <button type="button" class="tagDelete" onclick="deleteReservationTag('${encodeURIComponent(t)}')">×</button></span>`).join(' ')}
+            ${tags.map(t => `<span class="tag">${esc(t)} <button type="button" class="tagDelete" data-act="deleteReservationTag" data-args="${esc(JSON.stringify([encodeURIComponent(t)]))}">×</button></span>`).join(' ')}
           </span>
           <div>
             <input id="reservationTagInput" maxlength="30" placeholder="新增標籤">
-            <button class="secondary" onclick="addReservationTag()">新增標籤</button>
+            <button class="secondary" data-act="addReservationTag">新增標籤</button>
           </div>
         </div>
 
@@ -674,15 +674,15 @@ async function showDetail(id) {
           <div class="detailLabel">預定狀態</div>
           <div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              ${['Finished','Cancel','No-show','Other'].map(v => `<button type="button" class="secondary statusChoice ${status === v ? 'selected' : ''}" ${lockedCancelled && v !== 'Cancel' ? 'disabled style="opacity:.4;cursor:not-allowed"' : ''} onclick="chooseStatus('${v}')">${v}</button>`).join('')}
-              <input id="otherStatusInput" oninput="previewReservationStatus('Other')" class="${status === 'Other' ? '' : 'hidden'}" maxlength="100" placeholder="請輸入自定義狀態" value="${esc(x.otherStatus || '')}" style="max-width:220px;flex:1 1 180px">
-              <button class="primary" style="margin-left:auto" onclick="saveReservationDetail('${encodeURIComponent(x.id)}')">儲存</button>
+              ${['Finished','Cancel','No-show','Other'].map(v => `<button type="button" class="secondary statusChoice ${status === v ? 'selected' : ''}" ${lockedCancelled && v !== 'Cancel' ? 'disabled style="opacity:.4;cursor:not-allowed"' : ''} data-act="chooseStatus" data-args="${esc(JSON.stringify([v]))}">${v}</button>`).join('')}
+              <input id="otherStatusInput" data-in="previewReservationStatus" data-args="${esc(JSON.stringify(['Other']))}" class="${status === 'Other' ? '' : 'hidden'}" maxlength="100" placeholder="請輸入自定義狀態" value="${esc(x.otherStatus || '')}" style="max-width:220px;flex:1 1 180px">
+              <button class="primary" style="margin-left:auto" data-act="saveReservationDetail" data-args="${esc(JSON.stringify([encodeURIComponent(x.id)]))}">儲存</button>
             </div>
           </div>
         </div>
 
         <div class="actions">
-          <button class="secondary" onclick="closeReservationDetail(this)">關閉</button>
+          <button class="secondary" data-act="closeReservationDetail">關閉</button>
         </div>
       </div>
     `;
@@ -816,7 +816,7 @@ async function deleteReservationTag(tag) {
     window.currentDetailReservation = d.reservation;
 
     $('reservationTags').innerHTML = tags.map(v =>
-      `<span class="tag">${esc(v)} <button type="button" class="tagDelete" onclick="deleteReservationTag('${encodeURIComponent(v)}')">×</button></span>`
+      `<span class="tag">${esc(v)} <button type="button" class="tagDelete" data-act="deleteReservationTag" data-args="${esc(JSON.stringify([encodeURIComponent(v)]))}">×</button></span>`
     ).join(' ');
 
     await loadAdmin();
@@ -891,16 +891,16 @@ function renderCustomers() {
 
         return `<div class="customer booking">
           <div><b>${esc(c.name)}</b>
-          ${tags.map(t => `<span class="tag">${esc(t)} <button type="button" class="tagDelete" onclick="deleteCustomerTag('${encodeURIComponent(c.id)}','${encodeURIComponent(t)}')">×</button></span>`).join(' ')}
+          ${tags.map(t => `<span class="tag">${esc(t)} <button type="button" class="tagDelete" data-act="deleteCustomerTag" data-args="${esc(JSON.stringify([encodeURIComponent(c.id),encodeURIComponent(t)]))}">×</button></span>`).join(' ')}
           <br>電話：${esc(c.phone || '—')}
           <br>生日：${esc(c.birthDate || '—')}
           </div>
-          <div class="bookingActions"><button class="secondary" onclick="toggleCustHistory(this)">查看資料</button><button class="danger" onclick="deleteCustomer('${encodeURIComponent(c.id)}')">刪除檔案</button></div>
+          <div class="bookingActions"><button class="secondary" data-act="toggleCustHistory">查看資料</button><button class="danger" data-act="deleteCustomer" data-args="${esc(JSON.stringify([encodeURIComponent(c.id)]))}">刪除檔案</button></div>
           <div class="custHistory hidden">
             <div class="history">
               <div>
                 <input id="ct-${esc(c.id)}" placeholder="新增標籤">
-                <button class="secondary" onclick="addCustomerTag('${encodeURIComponent(c.id)}')">新增標籤</button>
+                <button class="secondary" data-act="addCustomerTag" data-args="${esc(JSON.stringify([encodeURIComponent(c.id)]))}">新增標籤</button>
               </div>
               歷史預約紀錄：${c.history?.length || 0} 筆
               <hr>
@@ -911,13 +911,13 @@ function renderCustomers() {
                   : (h.statusLabel || (isExpiredReservation(h) ? 'Finished' : '—'));
 
                 return `<div class="customerHistoryItem">
-                  <button type="button" class="historyJump" onclick="openCustomerReservation('${encodeURIComponent(h.reservationId || '')}')">
+                  <button type="button" class="historyJump" data-act="openCustomerReservation" data-args="${esc(JSON.stringify([encodeURIComponent(h.reservationId || '')]))}">
                     <span>${esc(String(h.date || '').slice(0,10))} ${esc(h.startTime || '')}–${esc(h.endTime || '')} · ${esc(h.serviceName || '')}</span>
                   </button>
                   <br>客人的備註：${esc(h.note || '—')}
                   <br>我的備註：${esc(h.myNote || '—')}
                   <br>預定狀態：${esc(historyStatus)}${h.statusLabel === 'Other' && h.otherStatus ? '（' + esc(h.otherStatus) + '）' : ''}
-                  <br><button class="secondary" onclick="deleteCustomerHistory('${encodeURIComponent(c.id)}','${encodeURIComponent(h.reservationId || '')}')">刪除此筆紀錄</button>
+                  <br><button class="secondary" data-act="deleteCustomerHistory" data-args="${esc(JSON.stringify([encodeURIComponent(c.id),encodeURIComponent(h.reservationId || '')]))}">刪除此筆紀錄</button>
                 </div>`;
               }).join('<hr>') || '尚無歷史預約'}
             </div>
@@ -1058,7 +1058,7 @@ function renderClosureCard(x) {
         <b>${esc(x.date)}</b><br>
         ${x.startTime ? `${esc(x.startTime)}–${esc(x.endTime)} 不可預約` : '全天公休'}
       </div>
-      <div class="bookingActions"><button class="danger" onclick="deleteClosure('${encodeURIComponent(x.id)}')">刪除</button></div>
+      <div class="bookingActions"><button class="danger" data-act="deleteClosure" data-args="${esc(JSON.stringify([encodeURIComponent(x.id)]))}">刪除</button></div>
     </div>
   `;
 }
@@ -1075,7 +1075,7 @@ async function loadClosures() {
     if (expired.length) {
       html += `
         <details class="adminAccordion" data-accordion="closure-expired" ${window.__closureAccordionOpen.expired ? 'open' : ''}
-                 ontoggle="window.__closureAccordionOpen.expired = this.open">
+                 data-toggle-for="closureExpired">
           <summary><span>Expired</span><span class="accCount">${expired.length}</span></summary>
           ${cards(expired)}
         </details>`;
@@ -1178,7 +1178,7 @@ function serviceRowHtml(s, i) {
     </div>
     <div class="svcSide">
       <label><input class="svcActive" type="checkbox" ${s.active === false ? '' : 'checked'}> 前台顯示</label>
-      ${isNew ? '<button type="button" class="danger" onclick="removeNewServiceRow(this)">移除</button>' : ''}
+      ${isNew ? '<button type="button" class="danger" data-act="removeNewServiceRow">移除</button>' : ''}
     </div>
   </div>`;
 }
@@ -1287,7 +1287,7 @@ function renderRecycleCard(x) {
   const when = new Date(x.deletedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
   const restoreBtn = x.alreadyLive
     ? ''
-    : `<button class="secondary" onclick="restoreRecycleItem('${encodeURIComponent(x.id)}')">還原</button>`;
+    : `<button class="secondary" data-act="restoreRecycleItem" data-args="${esc(JSON.stringify([encodeURIComponent(x.id)]))}">還原</button>`;
   return `
     <div class="booking">
       <div>
@@ -1297,7 +1297,7 @@ function renderRecycleCard(x) {
       </div>
       <div class="bookingActions">
         ${restoreBtn}
-        <button class="danger" onclick="purgeRecycleItem('${encodeURIComponent(x.id)}')">永久移除</button>
+        <button class="danger" data-act="purgeRecycleItem" data-args="${esc(JSON.stringify([encodeURIComponent(x.id)]))}">永久移除</button>
       </div>
     </div>
   `;
@@ -1365,8 +1365,8 @@ async function openAddReservation() {
       <select id="addResTime"><option value="">請先選擇日期與服務</option></select>
       <label>備註（選填）</label><input id="addResNote" maxlength="500">
       <div class="actions">
-        <button class="secondary" onclick="closeAddReservation()">取消</button>
-        <button onclick="submitAddReservation()">建立預約</button>
+        <button class="secondary" data-act="closeAddReservation">取消</button>
+        <button data-act="submitAddReservation">建立預約</button>
       </div>
     </div>
   `;
@@ -1446,8 +1446,8 @@ function openAddCustomer() {
       <label>電話</label><input id="addCusPhone" maxlength="30">
       <label>LINE ID（選填）</label><input id="addCusLine" maxlength="60">
       <div class="actions">
-        <button class="secondary" onclick="closeAddCustomer()">取消</button>
-        <button onclick="submitAddCustomer()">建立客人</button>
+        <button class="secondary" data-act="closeAddCustomer">取消</button>
+        <button data-act="submitAddCustomer">建立客人</button>
       </div>
     </div>
   `;
@@ -1601,6 +1601,52 @@ $('clearAdmin').onclick = () => {
 
 $('refreshCustomers').onclick = loadCustomers;
 $('customerSearch').oninput = renderCustomers;
+
+// ===== CSP 相容事件委派（取代內嵌 on* 屬性）=====
+const ACTIONS = {
+  showDetail: (el, ...a) => showDetail(...a),
+  cancelBooking: (el, ...a) => cancelBooking(...a),
+  deleteReservation: (el, ...a) => deleteReservation(...a),
+  deleteReservationTag: (el, ...a) => deleteReservationTag(...a),
+  addReservationTag: (el, ...a) => addReservationTag(...a),
+  chooseStatus: (el, ...a) => chooseStatus(...a),
+  saveReservationDetail: (el, ...a) => saveReservationDetail(...a),
+  closeReservationDetail: (el) => closeReservationDetail(el),
+  deleteCustomerTag: (el, ...a) => deleteCustomerTag(...a),
+  toggleCustHistory: (el) => toggleCustHistory(el),
+  deleteCustomer: (el, ...a) => deleteCustomer(...a),
+  addCustomerTag: (el, ...a) => addCustomerTag(...a),
+  openCustomerReservation: (el, ...a) => openCustomerReservation(...a),
+  deleteCustomerHistory: (el, ...a) => deleteCustomerHistory(...a),
+  deleteClosure: (el, ...a) => deleteClosure(...a),
+  removeNewServiceRow: (el) => removeNewServiceRow(el),
+  restoreRecycleItem: (el, ...a) => restoreRecycleItem(...a),
+  purgeRecycleItem: (el, ...a) => purgeRecycleItem(...a),
+  closeAddReservation: (el, ...a) => closeAddReservation(...a),
+  submitAddReservation: (el, ...a) => submitAddReservation(...a),
+  closeAddCustomer: (el, ...a) => closeAddCustomer(...a),
+  submitAddCustomer: (el, ...a) => submitAddCustomer(...a),
+  previewReservationStatus: (el, ...a) => previewReservationStatus(...a),
+};
+document.addEventListener('click', e => {
+  const el = e.target.closest ? e.target.closest('[data-act]') : null;
+  if (!el) return;
+  const fn = ACTIONS[el.dataset.act];
+  if (fn) fn(el, ...JSON.parse(el.dataset.args || '[]'));
+});
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (!el.dataset || !el.dataset.in) return;
+  const fn = ACTIONS[el.dataset.in];
+  if (fn) fn(el, ...JSON.parse(el.dataset.args || '[]'));
+}, true);
+document.addEventListener('toggle', e => {
+  const el = e.target;
+  const tag = el.dataset && el.dataset.toggleFor;
+  if (!tag) return;
+  if (tag === 'adminAccordion') window.__adminAccordionOpen[el.dataset.key] = el.open;
+  if (tag === 'closureExpired') window.__closureAccordionOpen.expired = el.open;
+}, true);
 
 loadCalendar().then(() => {
   if (!$('adminPanel').classList.contains('hidden')) {
