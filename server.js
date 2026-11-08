@@ -707,6 +707,13 @@ function safeEqual(a, b) {
   const bb = Buffer.from(String(b));
   return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
 }
+function normalizeBookingCode(value) {
+  const s = String(value || '').trim().toUpperCase();
+  return /^BK-\d{8}-[0-9A-F]{6}$/.test(s) ? s : '';
+}
+function bookingCodeMatches(item, code) {
+  return Boolean(code) && safeEqual(String(item?.bookingCode || '').toUpperCase(), code);
+}
 function validDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00`));
 }
@@ -1270,8 +1277,9 @@ const server = http.createServer(async (req, res) => {
       const serviceId=u.searchParams.get('serviceId') || CONFIG.services.find(x=>x.active)?.id;
       const reservationId=String(u.searchParams.get('reservationId')||'');
       const reservations=readJson(RESERVATIONS_FILE,[]);
-      const item=reservations.find(x=>x.id===reservationId && x.status!=='CANCELLED');
-      if(!item) return json(res,401,{error:'預約不存在或已取消'});
+      const code=normalizeBookingCode(u.searchParams.get('bookingCode'));
+      const item=reservations.find(x=>x.id===reservationId && x.status!=='CANCELLED' && bookingCodeMatches(x, code));
+      if(!item) return json(res,401,{error:'預約不存在、已取消或代碼不符'});
       if(!validDate(date)) return json(res,400,{error:'日期格式錯誤'});
       if(!serviceById(serviceId)) return json(res,400,{error:'服務項目無效'});
       return json(res,200,{date,serviceId,...getAvailability(date,serviceId,item.id)});
@@ -1279,21 +1287,21 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && u.pathname === '/api/manage/lookup') {
       const data=await readBody(req);
       const phone=normalizePhone(data.phone);
+      const code=normalizeBookingCode(data.bookingCode);
       if(!validPhone(phone)) return json(res,400,{error:'請輸入電話'});
+      if(!code) return json(res,400,{error:'請輸入預約代碼（格式：BK-日期-六碼）'});
       const today = todayISO();
-      const reservations=readJson(RESERVATIONS_FILE,[])
-        .filter(x=>normalizePhone(x.phone)===phone && x.status!=='CANCELLED' && x.date >= today)
-        .sort((a,b)=>`${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`));
-      if(!reservations.length) return json(res,404,{error:'找不到此電話的預約'});
+      const item=readJson(RESERVATIONS_FILE,[]).find(x=>normalizePhone(x.phone)===phone && x.status!=='CANCELLED' && x.date >= today && bookingCodeMatches(x, code));
+      if(!item) return json(res,401,{error:'電話或預約代碼不符'});
       const metaAll = await loadReservationMetaFromSupabase();
       const boundSet = await loadBoundReservationIds();
-      return json(res,200,{reservations:reservations.map(item=>({
+      return json(res,200,{reservations:[{
         lineBindCode: (item.status==='CANCELLED' || reservationHasEnded(item)) ? null : ((metaAll[item.id] || {}).lineBindCode || null),
         lineBound: boundSet.has(item.id),
         id:item.id,name:item.name,birthDate:item.birthDate,phone:item.phone||'',
         serviceId:item.serviceId,serviceName:item.serviceName,durationMinutes:item.durationMinutes,
         date:item.date,startTime:item.startTime,endTime:item.endTime,status:item.status,note:item.note||''
-      }))});
+      }]});
     }
     if (req.method === 'POST' && u.pathname === '/api/reservations') {
       const data = await readBody(req);
@@ -1401,10 +1409,11 @@ const server = http.createServer(async (req, res) => {
       const action=manageMatch[2];
       const data=await readBody(req);
       const phone=normalizePhone(data.phone);
+      const code=normalizeBookingCode(data.bookingCode);
       const reservations=readJson(RESERVATIONS_FILE,[]);
       const item=reservations.find(x=>x.id===reservationId);
-      if(!item || item.status==='CANCELLED' || !validPhone(phone) || normalizePhone(item.phone)!==phone)
-        return json(res,401,{error:'電話與預約資料不符'});
+      if(!item || item.status==='CANCELLED' || !validPhone(phone) || normalizePhone(item.phone)!==phone || !bookingCodeMatches(item, code))
+        return json(res,401,{error:'電話或預約代碼不符'});
       if(action==='cancel'){
         markReservationCancelled(item);
         await queueWrite(RESERVATIONS_FILE,reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();

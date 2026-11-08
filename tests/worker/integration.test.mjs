@@ -189,10 +189,10 @@ describe('整合測試：真實 server.js（Supabase 模式）+ Worker', () => {
       const { api } = await startSrv(); const slot = await slotAt(api, 0); const r = await book(api, slot); const id = r.json.reservation.id;
       m.S.fail.push({ re: /^POST integration_jobs/, times: 2 });
       const newSlot = await slotAt(api, 3);
-      const u = await api('PATCH', `/api/manage/reservations/${id}/update`, { phone: '0912-345-678', serviceId: 'chakra', date: newSlot.date, startTime: newSlot.startTime }, { auth: false });
+      const u = await api('PATCH', `/api/manage/reservations/${id}/update`, { phone: '0912-345-678', bookingCode: r.json.reservation.bookingCode, serviceId: 'chakra', date: newSlot.date, startTime: newSlot.startTime }, { auth: false });
       assert.equal(u.status, 200, JSON.stringify(u.json)); assert.equal(u.json.reservation.startTime, newSlot.startTime);
       m.S.fail.push({ re: /^POST integration_jobs/, times: 2 });
-      const c = await api('PATCH', `/api/manage/reservations/${id}/cancel`, { phone: '0912-345-678' }, { auth: false });
+      const c = await api('PATCH', `/api/manage/reservations/${id}/cancel`, { phone: '0912-345-678', bookingCode: r.json.reservation.bookingCode }, { auth: false });
       assert.equal(c.status, 200, JSON.stringify(c.json)); assert.equal(T().reservations.find(x => x.id === id).status, 'CANCELLED'); assert.equal(warns().length, 2);
     });
   });

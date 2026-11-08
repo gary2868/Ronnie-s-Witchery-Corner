@@ -151,8 +151,8 @@ describe('管理端新增／軟刪除／還原（本機模式，真實 server.js
   it('已被刪除的預約，客人用「管理預約」頁面查不到（等同不存在）', async () => {
     const c = await mkCustomer(api, '客人癸', '0922333444'); const p = await addPast(api, c.id);
     await api('DELETE', `/api/admin/reservations/${p.id}`);
-    const gone = await api('PATCH', `/api/manage/reservations/${p.id}/cancel`, { phone: '0922333444' }, { auth: false });
-    const never = await api('PATCH', `/api/manage/reservations/00000000-0000-0000-0000-000000000000/cancel`, { phone: '0922333444' }, { auth: false });
+    const gone = await api('PATCH', `/api/manage/reservations/${p.id}/cancel`, { phone: '0922333444', bookingCode: p.bookingCode }, { auth: false });
+    const never = await api('PATCH', `/api/manage/reservations/00000000-0000-0000-0000-000000000000/cancel`, { phone: '0922333444', bookingCode: p.bookingCode }, { auth: false });
     assert.equal(gone.status, never.status, '已刪除的預約，回應必須與「根本不存在」完全一樣（不洩漏任何資訊）'); assert.notEqual(gone.status, 200);
     assert.deepEqual(gone.json, never.json);
   });
