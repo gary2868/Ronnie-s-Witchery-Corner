@@ -44,7 +44,7 @@ export async function startRealServer(env = {}) {
   fs.cpSync(ROOT, dir, { recursive: true, filter: src => !/(^|[\\/])(node_modules|\.git|data)([\\/]|$)/.test(path.relative(ROOT, src)) });   // 相對路徑 + 同時支援 / 與 \（Windows）；避免專案路徑本身含 data 時整包被排除，也避免把你的真實 data 複製進測試
   const port = await freePort();
   const logFile = path.join(dir, 'server.log'); const out = fs.openSync(logFile, 'w');
-  const child = spawn('node', ['server.js'], { cwd: dir, env: { ...process.env, PORT: String(port), ...env }, stdio: ['ignore', out, out] });
+  const child = spawn('node', ['server.js'], { cwd: dir, env: { ...process.env, PORT: String(port), ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'test-only-admin-pw', ...env }, stdio: ['ignore', out, out] });
   const base = `http://127.0.0.1:${port}`;
   let ready = false;
   for (let i = 0; i < 100 && !ready; i++) {
@@ -60,7 +60,7 @@ export async function startRealServer(env = {}) {
   let cookie = '';
   const api = async (method, p, body, { auth = true } = {}) => {
     if (auth && !cookie && p.startsWith('/api/admin') && p !== '/api/admin/login') {
-      const r = await fetch(base + '/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: '5144' }) });
+      const r = await fetch(base + '/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: process.env.ADMIN_PASSWORD || 'test-only-admin-pw' }) });
       cookie = r.headers.get('set-cookie').split(';')[0];
     }
     const r = await fetch(base + p, { method, headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
