@@ -1175,7 +1175,9 @@ function serveStatic(req, res, pathname) {
   if (!full.startsWith(root + path.sep)) return json(res, 403, { error: 'Forbidden' });
   if (!fs.existsSync(full) || fs.statSync(full).isDirectory()) return json(res, 404, { error: 'Not found' });
   const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.webp': 'image/webp' };
-  res.writeHead(200, { 'Content-Type': types[path.extname(full)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+  const ext = path.extname(full).toLowerCase();
+  if (!types[ext] || path.basename(full).startsWith('.')) return json(res, 404, { error: 'Not found' });
+  res.writeHead(200, { 'Content-Type': types[ext], 'Cache-Control': 'no-store' });
   fs.createReadStream(full).pipe(res);
 }
 
@@ -1450,12 +1452,12 @@ const server = http.createServer(async (req, res) => {
       loginAttempts.delete(ip);
       const token = crypto.randomBytes(32).toString('base64url');
       sessions.set(token, { expiresAt: Date.now() + 8 * 60 * 60_000 });
-      return json(res, 200, { ok: true }, { 'Set-Cookie': `mh_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800` });
+      return json(res, 200, { ok: true }, { 'Set-Cookie': `mh_admin=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800` });
     }
     if (req.method === 'POST' && u.pathname === '/api/admin/logout') {
       const token = parseCookies(req).mh_admin;
       if (token) sessions.delete(token);
-      return json(res, 200, { ok: true }, { 'Set-Cookie': 'mh_admin=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/' });
+      return json(res, 200, { ok: true }, { 'Set-Cookie': 'mh_admin=; Max-Age=0; HttpOnly; Secure; SameSite=Strict; Path=/' });
     }
     if (req.method === 'GET' && u.pathname === '/magic-control') {
       return serveStatic(req, res, '/admin.html');
