@@ -261,3 +261,9 @@ document.addEventListener('click', e => {
   const fn = ACTIONS[el.dataset.act];
   if (fn) fn(el, ...JSON.parse(el.dataset.args || '[]'));
 });
+
+// 2c：已 LINE 登入（工作階段有效）時顯示「我的預約」入口
+fetch('/api/my/session', { credentials: 'same-origin' }).then(r => (r.ok ? r.json() : null)).then(d => {
+  const a = document.getElementById('myReservationsLink');
+  if (a && d && d.loggedIn) a.style.display = 'inline-flex';
+}).catch(() => {});
