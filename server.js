@@ -1388,6 +1388,7 @@ const server = http.createServer(async (req, res) => {
         try { await saveLineReservationBinding(item.id, lineUserId); lineBound = true; }
         catch (error) { console.warn('[line-login] save binding failed (reminders will not be sent for this booking):', error.message); }
       }
+      if (lineUserId) { try { await saveLineProfile(lineUserId, { name: item.name, birthDate: item.birthDate, phone: item.phone }); } catch (error) { console.warn('[line-profile] save failed (non-fatal):', error.message); } }
       const [lineBindCode] = await Promise.all([
         lineUserId ? Promise.resolve(null) : bestEffortIntegration('line bind token', () => createLineBindToken(item)),
         bestEffortIntegration('enqueue reservation.created', () => enqueueIntegrationJob('reservation.created', item, lineBound ? { lineBound: true } : {})),
@@ -1427,6 +1428,7 @@ const server = http.createServer(async (req, res) => {
           .map(x => ({ id: x.id, serviceId: x.serviceId, serviceName: x.serviceName, durationMinutes: x.durationMinutes, date: x.date, startTime: x.startTime, endTime: x.endTime, status: x.status }));
         return json(res, 200, { reservations: list });
       }
+      if (req.method === 'GET' && u.pathname === '/api/my/profile') return json(res, 200, { profile: (await loadLineProfile(sub)) || null });
       if (req.method === 'GET' && u.pathname === '/api/my/availability') {
         const date = u.searchParams.get('date');
         const serviceId = u.searchParams.get('serviceId') || CONFIG.services.find(x => x.active)?.id;
@@ -2205,6 +2207,23 @@ async function applyReservationAction(res, action, item, reservations, data) {
   await queueWrite(RESERVATIONS_FILE, reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();
   await bestEffortIntegration('enqueue reservation.updated', () => enqueueIntegrationJob('reservation.updated', item)); await notifyWorkerWakeup();
   return json(res, 200, { ok: true, reservation: item });
+}
+const LINE_PROFILES_FILE = path.join(DATA_DIR, 'line_profiles.json');
+// 上次填寫資料（僅姓名、生日、電話；備註不保存）。以 LINE userId 為鍵，本人登入後才可讀取
+async function saveLineProfile(sub, profile) {
+  const value = { name: profile.name || '', birthDate: profile.birthDate || '', phone: profile.phone || '', updatedAt: new Date().toISOString() };
+  if (STORAGE_MODE === 'supabase') {
+    await supabaseRequest('app_state', 'POST', { key: 'line_profile:' + sub, value, updated_at: value.updatedAt }, '?on_conflict=key', 'resolution=merge-duplicates,return=representation');
+    return;
+  }
+  const all = readJson(LINE_PROFILES_FILE, {}); all[sub] = value; atomicWrite(LINE_PROFILES_FILE, all);
+}
+async function loadLineProfile(sub) {
+  if (STORAGE_MODE === 'supabase') {
+    const rows = await supabaseRequest('app_state', 'GET', null, '?select=value&key=eq.' + encodeURIComponent('line_profile:' + sub) + '&limit=1');
+    return (rows && rows[0] && rows[0].value) || null;
+  }
+  return readJson(LINE_PROFILES_FILE, {})[sub] || null;
 }
 async function saveLineReservationBinding(reservationId, userId) {
   const value = { userId, boundAt: new Date().toISOString(), source: 'login' };
