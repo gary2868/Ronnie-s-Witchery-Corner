@@ -1424,8 +1424,20 @@ const server = http.createServer(async (req, res) => {
         const list = readJson(RESERVATIONS_FILE, [])
           .filter(x => ids.has(x.id) && x.status !== 'CANCELLED' && x.date >= today)
           .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime))
-          .map(x => ({ id: x.id, serviceName: x.serviceName, durationMinutes: x.durationMinutes, date: x.date, startTime: x.startTime, endTime: x.endTime, status: x.status }));
+          .map(x => ({ id: x.id, serviceId: x.serviceId, serviceName: x.serviceName, durationMinutes: x.durationMinutes, date: x.date, startTime: x.startTime, endTime: x.endTime, status: x.status }));
         return json(res, 200, { reservations: list });
+      }
+      if (req.method === 'GET' && u.pathname === '/api/my/availability') {
+        const date = u.searchParams.get('date');
+        const serviceId = u.searchParams.get('serviceId') || CONFIG.services.find(x => x.active)?.id;
+        const reservationId = String(u.searchParams.get('reservationId') || '');
+        const owner = reservationId ? await lineOwnerOf(reservationId) : null;
+        const item = readJson(RESERVATIONS_FILE, []).find(x => x.id === reservationId);
+        // 不屬於此顧客與不存在一律回相同的 404
+        if (!item || owner !== sub || item.status === 'CANCELLED') return json(res, 404, { error: '找不到此預約' });
+        if (!validDate(date)) return json(res, 400, { error: '日期格式錯誤' });
+        if (!serviceById(serviceId)) return json(res, 400, { error: '服務項目無效' });
+        return json(res, 200, { date, serviceId, ...getAvailability(date, serviceId, item.id) });
       }
       const mine = u.pathname.match(/^\/api\/my\/reservations\/([^/]+)\/(cancel|update)$/);
       if (req.method === 'PATCH' && mine) {

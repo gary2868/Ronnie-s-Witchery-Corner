@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>我的預約｜蘿妮的療癒空間</title>
+<style>
+body{margin:0;font-family:"Noto Sans TC",system-ui,sans-serif;background:#f7f3fb;color:#2b2233;line-height:1.6}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 20px;background:#fff;box-shadow:0 2px 10px rgba(60,40,90,.08)}
+header h1{font-size:20px;margin:0}
+main{max-width:720px;margin:0 auto;padding:16px}
+a.btn,button{font:inherit;border:0;border-radius:12px;padding:9px 16px;cursor:pointer;background:linear-gradient(135deg,#9b7fc4,#6f5590);color:#fff;text-decoration:none;display:inline-block}
+button.secondary,a.secondary{background:#fff;color:#6f5590;border:1px solid #d8cbe8}
+button.danger{background:#fff;color:#a33;border:1px solid #e3b8b8}
+button:disabled{opacity:.45;cursor:not-allowed}
+.card{background:#fff;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 2px 10px rgba(60,40,90,.06)}
+.card .meta{color:#6b5f7a;font-size:14px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;margin-top:10px}
+.slot.selected{outline:2px solid #6f5590}
+.notice{padding:10px 12px;border-radius:12px;background:#efe8f7;margin:10px 0}
+.hidden{display:none}
+input[type=date]{font:inherit;padding:8px;border-radius:10px;border:1px solid #d8cbe8}
+</style>
+</head>
+<body>
+<header>
+  <h1>✦ 我的預約</h1>
+  <div>
+    <a class="secondary btn" href="/">返回預約</a>
+    <button class="secondary hidden" id="logoutBtn" data-act="logout">登出</button>
+  </div>
+</header>
+<main>
+  <div id="loginBox" class="card hidden">
+    <p>請先以 LINE 登入，即可查看與管理您的預約。</p>
+    <a class="btn" href="/auth/line/start">以 LINE 登入</a>
+    <p class="meta">沒有使用 LINE？請回到<a href="/manage.html">查詢頁</a>，以電話加預約代碼查詢。</p>
+  </div>
+  <div id="notice" class="notice hidden"></div>
+  <div id="listBox" class="hidden"></div>
+  <div id="changeBox" class="card hidden">
+    <h2 style="margin-top:0">改期</h2>
+    <div class="meta" id="changeCurrent"></div>
+    <p><label>新日期 <input type="date" id="changeDate"></label></p>
+    <div id="slotHint" class="meta"></div>
+    <div id="slots" class="slots"></div>
+    <div class="actions">
+      <button id="saveChangeBtn" data-act="saveChange" disabled>確認改期</button>
+      <button class="secondary" data-act="closeChange">關閉</button>
+    </div>
+  </div>
+</main>
+<script src="/js/my-reservations.js"></script>
+</body>
+</html>
