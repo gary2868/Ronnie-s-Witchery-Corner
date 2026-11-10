@@ -1221,7 +1221,9 @@ const server = http.createServer(async (req, res) => {
         const claims = await verifyRes.json().catch(() => ({}));
         if (!verifyRes.ok || String(claims.aud) !== String(LINE_LOGIN.channelId) || claims.nonce !== saved.n || !claims.sub) return fail('verify');
         const ticket = signLineToken({ u: claims.sub, exp: Date.now() + 30 * 60 * 1000, j: crypto.randomUUID() });
-        res.writeHead(302, { Location: `/?line_ticket=${encodeURIComponent(ticket)}`, 'Set-Cookie': clearCookie });
+        const setCookies = [clearCookie];
+        if (CUSTOMER_LINE_MANAGE) setCookies.push(customerCookie(issueCustomerSession(claims.sub), CUSTOMER_MAX_MS / 1000));
+        res.writeHead(302, { Location: `/?line_ticket=${encodeURIComponent(ticket)}`, 'Set-Cookie': setCookies });
         return res.end();
       } catch (error) {
         console.warn('[line-login] callback failed:', error.message, error.cause ? String(error.cause.code || error.cause.message || error.cause) : '');
@@ -1405,6 +1407,39 @@ const server = http.createServer(async (req, res) => {
       }
       return json(res, 201, { reservation: item, officialUrl: CONFIG.officialUrl, lineBindCode, lineBound });
     }
+    if (u.pathname.startsWith('/api/my/')) {
+      if (!CUSTOMER_LINE_MANAGE) return json(res, 404, { error: 'Not found' });
+      if (req.method !== 'GET' && req.headers['x-requested-with'] !== 'fetch') return json(res, 403, { error: '請求來源不正確' });
+      const sub = currentCustomerSub(req);
+      if (req.method === 'GET' && u.pathname === '/api/my/session') return json(res, 200, { loggedIn: Boolean(sub) });
+      if (req.method === 'POST' && u.pathname === '/api/my/logout') {
+        const token = parseCookieHeader(req).mh_customer;
+        if (token) customerSessions.delete(token);
+        return json(res, 200, { ok: true }, { 'Set-Cookie': 'mh_customer=; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/' });
+      }
+      if (!sub) return json(res, 401, { error: '請先以 LINE 登入' });
+      if (req.method === 'GET' && u.pathname === '/api/my/reservations') {
+        const ids = new Set(await lineReservationIdsOf(sub));
+        const today = todayISO();
+        const list = readJson(RESERVATIONS_FILE, [])
+          .filter(x => ids.has(x.id) && x.status !== 'CANCELLED' && x.date >= today)
+          .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime))
+          .map(x => ({ id: x.id, serviceName: x.serviceName, durationMinutes: x.durationMinutes, date: x.date, startTime: x.startTime, endTime: x.endTime, status: x.status }));
+        return json(res, 200, { reservations: list });
+      }
+      const mine = u.pathname.match(/^\/api\/my\/reservations\/([^/]+)\/(cancel|update)$/);
+      if (req.method === 'PATCH' && mine) {
+        const reservationId = decodeURIComponent(mine[1]);
+        const owner = await lineOwnerOf(reservationId);
+        const reservations = readJson(RESERVATIONS_FILE, []);
+        const item = reservations.find(x => x.id === reservationId);
+        // 不屬於此顧客與不存在一律回相同的 404（不洩漏預約是否存在）
+        if (!item || owner !== sub || item.status === 'CANCELLED') return json(res, 404, { error: '找不到此預約' });
+        const data = await readBody(req);
+        return applyReservationAction(res, mine[2], item, reservations, data);
+      }
+      return json(res, 404, { error: 'Not found' });
+    }
     const manageMatch = u.pathname.match(/^\/api\/manage\/reservations\/([^/]+)\/(cancel|update)$/);
     if (req.method === 'PATCH' && manageMatch) {
       const reservationId=decodeURIComponent(manageMatch[1]);
@@ -1416,30 +1451,7 @@ const server = http.createServer(async (req, res) => {
       const item=reservations.find(x=>x.id===reservationId);
       if(!item || item.status==='CANCELLED' || !validPhone(phone) || normalizePhone(item.phone)!==phone || !bookingCodeMatches(item, code))
         return json(res,401,{error:'電話或預約代碼不符'});
-      if(action==='cancel'){
-        markReservationCancelled(item);
-        await queueWrite(RESERVATIONS_FILE,reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();
-        await bestEffortIntegration('enqueue reservation.cancelled', () => enqueueIntegrationJob('reservation.cancelled', item)); await notifyWorkerWakeup();
-        return json(res,200,{ok:true,reservation:{id:item.id,status:item.status}});
-      }
-      const service=serviceById(data.serviceId);
-      if(!validDate(data.date)||!service||typeof data.startTime!=='string') return json(res,400,{error:'新的日期、服務或時間不完整'});
-      const today=todayISO();
-      if(data.date<=today) return json(res,400,{error:'當日及過去日期不可預約，請選擇明日或之後'});
-      if(data.date>maxBookingDateISO()) return json(res,400,{error:`目前可預約至 ${maxBookingDateISO()}`});
-      if(isClosed(data.date)) return json(res,400,{error:'該日期為公休，無法預約'});
-      const allowedStarts=new Set(baseSlotsForDate(data.date));
-      const serviceSlots=expectedSlots(data.startTime,service.durationMinutes);
-      const blocked=blockedSlots(data.startTime,service.durationMinutes);
-      if(!allowedStarts.has(data.startTime)||!isContiguous(serviceSlots)) return json(res,400,{error:'所選開始時間不在可預約範圍內'});
-      if(!slotsAvailable(data.date,blocked,item.id)) return json(res,409,{error:'新的時段剛剛已被其他使用者預約，請重新選擇'});
-      item.serviceId=service.id; item.serviceName=service.name; item.durationMinutes=service.durationMinutes;
-      item.date=data.date; item.startTime=serviceSlots[0];
-      item.endTime=fromMinutes(toMinutes(serviceSlots[serviceSlots.length-1])+CONFIG.slotMinutes);
-      item.serviceSlots=serviceSlots; item.slots=blocked; item.updatedAt=new Date().toISOString();
-      await queueWrite(RESERVATIONS_FILE,reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();
-      await bestEffortIntegration('enqueue reservation.updated', () => enqueueIntegrationJob('reservation.updated', item)); await notifyWorkerWakeup();
-      return json(res,200,{ok:true,reservation:item});
+      return applyReservationAction(res, action, item, reservations, data);
     }
     if (req.method === 'POST' && u.pathname === '/api/admin/login') {
       if (!ADMIN_PASSWORD) return json(res, 503, { error: '尚未設定 ADMIN_PASSWORD' });
@@ -2112,6 +2124,75 @@ function parseCookieHeader(req) {
     if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
   }
   return out;
+}
+/* ───────── 顧客 LINE 工作階段（2a；旗標 CUSTOMER_LINE_MANAGE=on 才啟用）─────────
+ * 閒置 2 小時、上限 8 小時；記憶體保存（重啟後需重新登入，與管理員登入一致）。
+ * SameSite=Lax：LINE 授權頁回呼是跨站導向，Strict 可能導致首次請求帶不到 Cookie；
+ * CSRF 防護由 Lax + 所有寫入端點的 X-Requested-With 標頭共同提供。
+ */
+const CUSTOMER_LINE_MANAGE = process.env.CUSTOMER_LINE_MANAGE === 'on';
+const customerSessions = new Map();   // token → { sub, issuedAt, lastSeenAt }
+const CUSTOMER_IDLE_MS = 2 * 60 * 60_000;
+const CUSTOMER_MAX_MS = 8 * 60 * 60_000;
+function issueCustomerSession(sub) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  const now = Date.now();
+  customerSessions.set(token, { sub, issuedAt: now, lastSeenAt: now });
+  return token;
+}
+function currentCustomerSub(req) {
+  const token = parseCookieHeader(req).mh_customer;
+  if (!token) return null;
+  const s = customerSessions.get(token);
+  if (!s) return null;
+  const now = Date.now();
+  if (now - s.lastSeenAt > CUSTOMER_IDLE_MS || now - s.issuedAt > CUSTOMER_MAX_MS) { customerSessions.delete(token); return null; }
+  s.lastSeenAt = now;
+  return s.sub;
+}
+function customerCookie(token, maxAgeSec) {
+  return `mh_customer=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAgeSec}`;
+}
+async function lineOwnerOf(reservationId) {
+  if (STORAGE_MODE === 'supabase') {
+    const rows = await supabaseRequest('app_state', 'GET', null, `?select=value&key=eq.${encodeURIComponent('line_reservation:' + reservationId)}&limit=1`);
+    return (rows && rows[0] && rows[0].value && rows[0].value.userId) || null;
+  }
+  return (readJson(LINE_BINDINGS_FILE, {})[reservationId] || {}).userId || null;
+}
+async function lineReservationIdsOf(sub) {
+  if (STORAGE_MODE === 'supabase') {
+    const rows = await supabaseRequest('app_state', 'GET', null, '?select=key,value&key=like.line_reservation:*');
+    return (rows || []).filter(r => r.value && r.value.userId === sub).map(r => String(r.key).slice('line_reservation:'.length));
+  }
+  return Object.entries(readJson(LINE_BINDINGS_FILE, {})).filter(([, v]) => v && v.userId === sub).map(([id]) => id);
+}
+// 取消與改期的業務邏輯（管理端電話+代碼、顧客端工作階段共用，行為完全相同）
+async function applyReservationAction(res, action, item, reservations, data) {
+  if (action === 'cancel') {
+    markReservationCancelled(item);
+    await queueWrite(RESERVATIONS_FILE, reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();
+    await bestEffortIntegration('enqueue reservation.cancelled', () => enqueueIntegrationJob('reservation.cancelled', item)); await notifyWorkerWakeup();
+    return json(res, 200, { ok: true, reservation: { id: item.id, status: item.status } });
+  }
+  const service = serviceById(data.serviceId);
+  if (!validDate(data.date) || !service || typeof data.startTime !== 'string') return json(res, 400, { error: '新的日期、服務或時間不完整' });
+  const today = todayISO();
+  if (data.date <= today) return json(res, 400, { error: '當日及過去日期不可預約，請選擇明日或之後' });
+  if (data.date > maxBookingDateISO()) return json(res, 400, { error: `目前可預約至 ${maxBookingDateISO()}` });
+  if (isClosed(data.date)) return json(res, 400, { error: '該日期為公休，無法預約' });
+  const allowedStarts = new Set(baseSlotsForDate(data.date));
+  const serviceSlots = expectedSlots(data.startTime, service.durationMinutes);
+  const blocked = blockedSlots(data.startTime, service.durationMinutes);
+  if (!allowedStarts.has(data.startTime) || !isContiguous(serviceSlots)) return json(res, 400, { error: '所選開始時間不在可預約範圍內' });
+  if (!slotsAvailable(data.date, blocked, item.id)) return json(res, 409, { error: '新的時段剛剛已被其他使用者預約，請重新選擇' });
+  item.serviceId = service.id; item.serviceName = service.name; item.durationMinutes = service.durationMinutes;
+  item.date = data.date; item.startTime = serviceSlots[0];
+  item.endTime = fromMinutes(toMinutes(serviceSlots[serviceSlots.length - 1]) + CONFIG.slotMinutes);
+  item.serviceSlots = serviceSlots; item.slots = blocked; item.updatedAt = new Date().toISOString();
+  await queueWrite(RESERVATIONS_FILE, reservations); invalidateCalendarCaches(); upsertCustomerFromReservation(item); await flushStorage();
+  await bestEffortIntegration('enqueue reservation.updated', () => enqueueIntegrationJob('reservation.updated', item)); await notifyWorkerWakeup();
+  return json(res, 200, { ok: true, reservation: item });
 }
 async function saveLineReservationBinding(reservationId, userId) {
   const value = { userId, boundAt: new Date().toISOString(), source: 'login' };
