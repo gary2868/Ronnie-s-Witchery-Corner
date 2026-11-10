@@ -59,11 +59,24 @@ label{display:block;margin:14px 0 7px;color:#5e5268}input{width:100%;padding:13p
 .pageNoticeCard{background:#fff;border-radius:18px;padding:22px 24px 18px;min-width:240px;max-width:min(88vw,420px);box-shadow:0 18px 40px rgba(40,30,50,.25)}
 .pageNoticeText{white-space:pre-line;color:#2b2233;line-height:1.7;margin-bottom:16px;font-size:16px}
 .pageNoticeOk{display:block;margin-left:auto;padding:9px 22px;border:0;border-radius:12px;background:linear-gradient(135deg,#9b7fc4,#6f5590);color:#fff;font-weight:700;cursor:pointer}
+
+/* 首頁 LINE 區塊與按鈕位置（電腦：LINE 在最右；手機：LINE 在右上角） */
+[hidden]{display:none!important}
+.lineSlot{order:3;margin-left:auto;margin-right:0}
+.lineSlot img{max-width:100%}
+#manageBookingBtn,#myReservationsLink{order:2}
+@media(max-width:800px){
+  header{flex-direction:row!important;flex-wrap:wrap;align-items:flex-start}
+  header>div:first-child{flex:1 1 0;min-width:0}
+  .lineSlot{order:0;margin-left:0;margin-right:0;flex:0 0 auto;max-width:46%}
+  .lineSlot img{max-width:100%;height:auto}
+  #manageBookingBtn,#myReservationsLink{order:2;flex:1 1 100%}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-<header class="glass"><div><h1><span class="magic">✦</span> 蘿妮的療癒空間</h1><div class="sub">歡迎來到蘿妮的療癒空間線上預約系統。</div></div><div id="lineLoginSlot" class="lineSlot"></div><button class="secondary" id="manageBookingBtn">查詢／修改預約</button><a class="secondary" id="myReservationsLink" href="/my-reservations.html" style="display:none;align-items:center;padding:9px 16px;border-radius:12px;text-decoration:none;font:inherit">我的預約</a></header>
+<header class="glass"><div><h1><span class="magic">✦</span> 蘿妮的療癒空間</h1><div class="sub">歡迎來到蘿妮的療癒空間線上預約系統。</div></div><div id="lineLoginSlot" class="lineSlot"></div><button class="secondary" id="manageBookingBtn">查詢／修改預約</button><button class="secondary" id="myReservationsLink" type="button" hidden>我的預約</button></header>
 <main>
 <section class="glass panel">
 <div class="steps"><span class="step active">1 選擇日期</span><span class="step">2 選擇服務</span><span class="step">3 選擇時間</span><span class="step">4 填寫資料</span><span class="step">5 確認</span></div>

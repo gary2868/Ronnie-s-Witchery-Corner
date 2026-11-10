@@ -13,14 +13,14 @@ a.btn,button{font:inherit;border:0;border-radius:12px;padding:9px 16px;cursor:po
 button.secondary,a.secondary{background:#fff;color:#6f5590;border:1px solid #d8cbe8}
 button.danger{background:#fff;color:#a33;border:1px solid #e3b8b8}
 button:disabled{opacity:.45;cursor:not-allowed}
+[hidden],.hidden{display:none!important}
 .card{background:#fff;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 2px 10px rgba(60,40,90,.06)}
 .card .meta{color:#6b5f7a;font-size:14px}
-.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:flex-end}
 .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;margin-top:10px}
 .slot.selected{outline:2px solid #6f5590}
 .notice{padding:10px 12px;border-radius:12px;background:#efe8f7;margin:10px 0}
-.hidden{display:none}
-input[type=date]{font:inherit;padding:8px;border-radius:10px;border:1px solid #d8cbe8}
+input[type=date],select{font:inherit;padding:8px;border-radius:10px;border:1px solid #d8cbe8}
 </style>
 </head>
 <body>
@@ -40,14 +40,15 @@ input[type=date]{font:inherit;padding:8px;border-radius:10px;border:1px solid #d
   <div id="notice" class="notice hidden"></div>
   <div id="listBox" class="hidden"></div>
   <div id="changeBox" class="card hidden">
-    <h2 style="margin-top:0">改期</h2>
+    <h2 style="margin-top:0">修改預約</h2>
     <div class="meta" id="changeCurrent"></div>
-    <p><label>新日期 <input type="date" id="changeDate"></label></p>
+    <p><label>服務項目 <select id="changeService"></select></label></p>
+    <p><label>日期 <input type="date" id="changeDate"></label></p>
     <div id="slotHint" class="meta"></div>
     <div id="slots" class="slots"></div>
     <div class="actions">
-      <button id="saveChangeBtn" data-act="saveChange" disabled>確認改期</button>
       <button class="secondary" data-act="closeChange">關閉</button>
+      <button id="saveChangeBtn" data-act="saveChange" disabled>確認修改</button>
     </div>
   </div>
 </main>

@@ -235,7 +235,7 @@ function renderAdminCalendar(data) {
     if (
       reservationCount > 0 &&
       status !== 'CLOSED' &&
-      status !== 'PARTIAL_CLOSED' &&
+      
       status !== 'TODAY' &&
       status !== 'PAST' &&
       status !== 'UNAVAILABLE' &&
@@ -246,7 +246,7 @@ function renderAdminCalendar(data) {
       eventLabel = '已預約';
     }
 
-    html += `<button type="button" class="calDay ${status.toLowerCase()}" data-date="${date}" data-status="${status}"><b>${d}</b><div class="calCount">${esc(eventLabel)}</div></button>`;
+    html += `<button type="button" class="calDay ${status.toLowerCase()}" data-date="${date}" data-booked=\"${reservationCount}\" data-status="${status}"><b>${d}</b><div class="calCount">${esc(eventLabel)}</div></button>`;
   }
 
   const grid = $('calendarGrid');
@@ -256,7 +256,7 @@ function renderAdminCalendar(data) {
     b.onclick = () => {
       const status = b.dataset.status;
       if (status === 'UNAVAILABLE') return;
-      if (status === 'CLOSED' || status === 'PARTIAL_CLOSED') {
+      if (status === 'CLOSED' || (status === 'PARTIAL_CLOSED' && Number(b.dataset.booked || 0) === 0)) {
         window.__focusClosureDate = b.dataset.date;
         showTab('closure');
         loadClosures();

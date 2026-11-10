@@ -238,7 +238,7 @@ function getLineTicket(){ const raw=sessionStorage.getItem('lineTicket'); if(!ra
 function clearLineTicket(){ sessionStorage.removeItem('lineTicket'); state.lineTicket=null; renderLineSlot(); }
 function renderLineSlot(){
   const slot=$('lineLoginSlot'); if(!slot) return;
-  if(getLineTicket()) slot.innerHTML='<div class="bindHint">已完成 LINE 登入：送出預約時會綁定 LINE 提醒</div>';
+  if(getLineTicket()||window.__lineSession) slot.innerHTML='<div class="bindHint">LINE帳號已登入</div>';
   else slot.innerHTML='<picture><source media="(max-width:800px)" srcset="/btn_login_1x32dp.png"><img id="lineLoginImg" src="/btn_login_2x32dp.png" alt="用 LINE 登入並綁定" role="button" tabindex="0"></picture>';
   const img=$('lineLoginImg'); if(img){ img.onclick=startLineLogin; img.onkeydown=e=>{ if(e.key==='Enter') startLineLogin(); }; }
 }
@@ -262,8 +262,16 @@ document.addEventListener('click', e => {
   if (fn) fn(el, ...JSON.parse(el.dataset.args || '[]'));
 });
 
-// 2c：已 LINE 登入（工作階段有效）時顯示「我的預約」入口
-fetch('/api/my/session', { credentials: 'same-origin' }).then(r => (r.ok ? r.json() : null)).then(d => {
-  const a = document.getElementById('myReservationsLink');
-  if (a && d && d.loggedIn) a.style.display = 'inline-flex';
-}).catch(() => {});
+// 登入狀態以工作階段為準（票據只代表預約用的暫存）；已登入：隱藏「查詢／修改預約」，只顯示「我的預約」
+window.__lineSession = false;
+function applyLoginChrome(){
+  const mine=document.getElementById('myReservationsLink'), manage=document.getElementById('manageBookingBtn');
+  if(mine) mine.hidden=!window.__lineSession;
+  if(manage) manage.hidden=!!window.__lineSession;
+  if(typeof renderLineSlot==='function') renderLineSlot();
+}
+fetch('/api/my/session',{credentials:'same-origin'}).then(r=>(r.ok?r.json():null)).then(d=>{
+  window.__lineSession=!!(d&&d.loggedIn); applyLoginChrome();
+}).catch(()=>{});
+const myBtn=document.getElementById('myReservationsLink');
+if(myBtn) myBtn.addEventListener('click',()=>{ location.href='/my-reservations.html'; });
