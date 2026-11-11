@@ -212,6 +212,21 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 #adminPanel button{border-radius:12px}
 #adminPanel .glass>h2:first-child{margin-top:0}
 @media(max-width:800px){#adminPanel .booking{padding:14px}#adminPanel h2{font-size:18px}}
+
+/* ===== 行事曆與預約列表（第三階段）：格子圓角、間距與字級；配色沿用 :root 變數 ===== */
+#adminPanel .calDay{border-radius:16px;min-height:86px;padding:12px 12px 10px;transition:transform .15s ease,box-shadow .15s ease;box-shadow:0 2px 8px rgba(77,59,103,.05)}
+#adminPanel .calDay:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(77,59,103,.10)}
+#adminPanel .calCount{font-size:12px;font-weight:600;color:var(--muted);margin-top:6px;line-height:1.4}
+#adminPanel .calDay[data-status="PARTIAL_CLOSED"],#adminPanel .calDay[data-status="CLOSED"]{background:#f6f0fb}
+#adminPanel .calDay[data-status="RESERVED"]{background:#fff8ec}
+#adminPanel .calDay[data-status="PAST"]{opacity:.55}
+#adminPanel .calHead,#adminPanel .weekHead{font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:600}
+#adminPanel .booking{border-left:4px solid var(--violet)}
+#adminPanel .booking:hover{box-shadow:0 10px 26px rgba(77,59,103,.10)}
+@media(max-width:800px){
+  #adminPanel .calDay{min-height:64px;padding:8px 6px;border-radius:12px}
+  #adminPanel .calCount{font-size:11px}
+}
 </style>
 </head>
 <body>
