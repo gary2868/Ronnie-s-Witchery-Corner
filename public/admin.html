@@ -165,7 +165,6 @@ h1{font-size:21px}
   .tabs > button{flex:0 0 auto;white-space:nowrap}
 }
 
-
 /* ===== 後台版面（第一階段）：電腦左側邊欄、手機底部導覽；配色沿用 :root 變數 ===== */
 body.adminShell{margin:0}
 #adminPanel,#adminPanel>*,#adminPanel>*>*,#adminPanel .glass{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;filter:none!important;transform:none!important;perspective:none!important;contain:none!important}
@@ -179,6 +178,26 @@ div:has(> #tabCalendar) > button.active{background:rgba(142,118,183,.16);color:v
 @media(max-width:800px){
   div:has(> #tabCalendar){margin:0!important;top:auto;left:0;right:0;bottom:0!important;width:auto;height:auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:8px 10px calc(8px + env(safe-area-inset-bottom,0px));border-right:0;border-top:1px solid var(--line);gap:6px}
   div:has(> #tabCalendar) > button{flex:0 0 auto;width:auto;white-space:nowrap;font-size:13px;padding:8px 12px}
+  #adminPanel{margin-left:0;padding-bottom:96px}
+}
+
+/* ===== 後台版面（第一階段）：電腦左側邊欄、手機底部導覽；配色沿用 :root 變數 ===== */
+body.adminShell{margin:0}
+#adminPanel,#adminPanel>*,#adminPanel>*>*,#adminPanel .glass{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;filter:none!important;transform:none!important;perspective:none!important;contain:none!important}
+#adminPanel .glass{background:#fff!important}
+div:has(> #tabCalendar){margin:0!important;position:fixed;left:0;top:0;bottom:0;width:232px;display:flex!important;flex-direction:column;align-items:stretch;gap:4px;padding:20px 14px;background:var(--glass);border-right:1px solid var(--line);overflow-y:auto;z-index:20;box-sizing:border-box;flex-wrap:nowrap!important}
+div:has(> #tabCalendar) > button{width:100%;justify-content:flex-start;text-align:left;border-radius:12px;padding:10px 14px;box-shadow:none;background:transparent;border:0;color:var(--ink);font-weight:500}
+div:has(> #tabCalendar) > button:hover{background:rgba(142,118,183,.08)}
+div:has(> #tabCalendar) > button.active{background:rgba(142,118,183,.16);color:var(--violet-dark);font-weight:700}
+#adminPanel{margin-left:0;padding-bottom:24px;min-width:0}
+body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-width:none!important}
+#adminPanel > .glass:first-child{margin-left:0}
+@media(max-width:800px){
+  div:has(> #tabCalendar){margin:0!important;top:auto;left:0;right:0;bottom:0!important;width:auto;height:auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:8px 10px calc(8px + env(safe-area-inset-bottom,0px));border-right:0;border-top:1px solid var(--line);gap:6px}
+  div:has(> #tabCalendar) > button{flex:0 0 auto;width:auto;white-space:nowrap;font-size:13px;padding:8px 12px}
+  body:has(#adminPanel:not(.hidden)) .wrap{margin:0!important;max-width:none!important}
+  div:has(> #tabCalendar) > button{border:1px solid var(--line)!important;background:#fff!important;border-radius:12px}
+  div:has(> #tabCalendar) > button.active{border-color:var(--violet)!important;background:rgba(142,118,183,.16)!important}
   #adminPanel{margin-left:0;padding-bottom:96px}
 }
 </style>
