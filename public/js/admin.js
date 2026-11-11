@@ -1167,7 +1167,7 @@ async function deleteClosure(id) {
 let serviceRows = [];   // 畫面上目前的服務列（已儲存＋尚未儲存的新列）
 function serviceRowHtml(s, i) {
   const isNew = !s.id;
-  return `<div class="booking serviceRow" data-idx="${i}" data-id="${esc(s.id || '')}">
+  return `<div class="booking serviceRow" draggable="true" data-idx="${i}" data-id="${esc(s.id || '')}">
     <div class="svcMain">
       <label>服務名稱</label><input class="svcName" maxlength="40" value="${esc(s.name || '')}">
       <label>說明</label><input class="svcDesc" maxlength="120" value="${esc(s.description || '')}">
@@ -1176,7 +1176,7 @@ function serviceRowHtml(s, i) {
       <label>時長（分鐘）</label><input class="svcDuration" type="number" min="30" max="480" step="30" value="${esc(s.durationMinutes ?? 60)}">
       <label>價格（NT$）</label><input class="svcPrice" type="number" min="0" max="99999" step="1" value="${esc(s.price ?? 0)}">
     </div>
-    <div class="svcSide">
+    <div class="svcSide"><span class="svcHandle" title="拖曳排序">⠿ 拖曳</span> <button type="button" class="secondary" data-act="moveServiceUp">▲</button> <button type="button" class="secondary" data-act="moveServiceDown">▼</button>
       <label><input class="svcActive" type="checkbox" ${s.active === false ? '' : 'checked'}> 前台顯示</label>
       ${isNew ? '<button type="button" class="danger" data-act="removeNewServiceRow">移除</button>' : ''}
     </div>
@@ -1206,7 +1206,7 @@ function collectServiceRows() {
 }
 function addServiceRow() {
   const cur = collectServiceRows();
-  cur.push({ name: '', description: '', durationMinutes: 60, price: 0, active: true });
+  cur.unshift({ name: '', description: '', durationMinutes: 60, price: 0, active: true });
   serviceRows = cur;
   renderServices();
 }
@@ -1620,6 +1620,8 @@ const ACTIONS = {
   deleteCustomerHistory: (el, ...a) => deleteCustomerHistory(...a),
   deleteClosure: (el, ...a) => deleteClosure(...a),
   removeNewServiceRow: (el) => removeNewServiceRow(el),
+  moveServiceUp: (el) => moveServiceRow(el, -1),
+  moveServiceDown: (el) => moveServiceRow(el, 1),
   restoreRecycleItem: (el, ...a) => restoreRecycleItem(...a),
   purgeRecycleItem: (el, ...a) => purgeRecycleItem(...a),
   closeAddReservation: (el, ...a) => closeAddReservation(...a),
@@ -1652,4 +1654,27 @@ loadCalendar().then(() => {
   if (!$('adminPanel').classList.contains('hidden')) {
     showTab('calendar');
   }
+});
+// ===== 服務排序（拖曳與 ▲▼）=====
+function moveServiceRow(el, dir){
+  const cur = collectServiceRows(); const idx = Number(el.closest('.serviceRow').dataset.idx); const j = idx + dir;
+  if (j < 0 || j >= cur.length) return;
+  [cur[idx], cur[j]] = [cur[j], cur[idx]]; serviceRows = cur; renderServices();
+}
+let dragServiceIdx = null;
+document.addEventListener('dragstart', e => {
+  const r = e.target.closest ? e.target.closest('#serviceContent .serviceRow') : null; if (!r) return;
+  dragServiceIdx = Number(r.dataset.idx); e.dataTransfer.effectAllowed = 'move';
+  try { e.dataTransfer.setData('text/plain', ''); } catch (err) {}
+});
+document.addEventListener('dragover', e => {
+  if (e.target.closest && e.target.closest('#serviceContent .serviceRow')) e.preventDefault();
+});
+document.addEventListener('drop', e => {
+  const r = e.target.closest ? e.target.closest('#serviceContent .serviceRow') : null;
+  if (!r || dragServiceIdx === null) return;
+  e.preventDefault();
+  const to = Number(r.dataset.idx); const cur = collectServiceRows();
+  const [moved] = cur.splice(dragServiceIdx, 1); cur.splice(to, 0, moved);
+  dragServiceIdx = null; serviceRows = cur; renderServices();
 });
