@@ -68,7 +68,7 @@ async function exportData() {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 
@@ -151,7 +151,7 @@ async function importDataFromFile(file) {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || '匯入失敗');
 
-    alert(`匯入完成\n預約：${d.reservations} 筆\n客人檔案：${d.customers} 筆\n公休：${d.closures} 筆`);
+    uiAlert(`匯入完成\n預約：${d.reservations} 筆\n客人檔案：${d.customers} 筆\n公休：${d.closures} 筆`);
 
     adminCalendarCache.clear();
     await loadCalendar(true);
@@ -160,7 +160,7 @@ async function importDataFromFile(file) {
     await loadClosures();
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   } finally {
     $('importFile').value = '';
   }
@@ -690,7 +690,7 @@ async function showDetail(id) {
     window.selectedReservationStatus = status;
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 
@@ -718,7 +718,7 @@ async function saveReservationDetail(id) {
   const input = $('myNoteInput');
 
   if (!input) {
-    alert('找不到我的備註輸入框');
+    uiAlert('找不到我的備註輸入框');
     return;
   }
 
@@ -766,7 +766,7 @@ async function saveReservationDetail(id) {
     await loadCustomers();
     if (v === 'Cancel') await loadCalendar();
   } catch (e) {
-    alert(e.message);
+    uiAlert(e.message);
   }
 }
 
@@ -795,7 +795,7 @@ async function addReservationTag() {
     await loadCustomers();
     await showDetail(x.id);
   } catch (e) {
-    alert(e.message);
+    uiAlert(e.message);
   }
 }
 
@@ -822,7 +822,7 @@ async function deleteReservationTag(tag) {
     await loadAdmin();
     await loadCustomers();
   } catch (e) {
-    alert(e.message);
+    uiAlert(e.message);
   }
 }
 
@@ -846,7 +846,7 @@ async function saveMyNote(id) {
     await loadCustomers();
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 
@@ -859,7 +859,7 @@ async function cancelBooking(id) {
     adminCalendarCache.clear();
     await loadCalendar();
   } catch (e) {
-    alert(e.message);
+    uiAlert(e.message);
   }
 }
 
@@ -947,7 +947,7 @@ async function openCustomerReservation(id) {
     }
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 
@@ -973,7 +973,7 @@ async function addCustomerTag(id) {
     c.tags = d.customer.tags;
     renderCustomers();
   } catch (e) {
-    alert(e.message);
+    uiAlert(e.message);
   }
 }
 
@@ -996,7 +996,7 @@ async function deleteCustomerTag(id, tag) {
     renderCustomers();
     await loadAdmin();
   } catch (e) {
-    alert(e.message);
+    uiAlert(e.message);
   }
 }
 
@@ -1109,19 +1109,19 @@ async function addClosure() {
   const end = range ? $('closureEnd').value : '';
 
   if (!date) {
-    alert('請選擇公休日期');
+    uiAlert('請選擇公休日期');
     return;
   }
   if (multi && !endDate) {
-    alert('請選擇連休結束日期');
+    uiAlert('請選擇連休結束日期');
     return;
   }
   if (multi && endDate < date) {
-    alert('結束日期不可早於開始日期');
+    uiAlert('結束日期不可早於開始日期');
     return;
   }
   if (range && !end) {
-    alert('請選擇公休結束時間');
+    uiAlert('請選擇公休結束時間');
     return;
   }
 
@@ -1140,14 +1140,14 @@ async function addClosure() {
     $('closureEndDate').classList.add('hidden');
 
     if (multi) {
-      alert(`已新增 ${d.count} 天公休${d.skipped ? `（${d.skipped} 天原本已是公休，已略過）` : ''}`);
+      uiAlert(`已新增 ${d.count} 天公休${d.skipped ? `（${d.skipped} 天原本已是公休，已略過）` : ''}`);
     }
 
     await loadClosures();
     adminCalendarCache.clear();
     await loadCalendar();
   } catch (e) {
-    alert(e.message);
+    uiAlert(e.message);
   }
 }
 
@@ -1160,7 +1160,7 @@ async function deleteClosure(id) {
     adminCalendarCache.clear();
     await loadCalendar();
   } catch (e) {
-    alert(e.message);
+    uiAlert(e.message);
   }
 }
 
@@ -1176,8 +1176,8 @@ function serviceRowHtml(s, i) {
       <label>時長（分鐘）</label><input class="svcDuration" type="number" min="30" max="480" step="30" value="${esc(s.durationMinutes ?? 60)}">
       <label>價格（NT$）</label><input class="svcPrice" type="number" min="0" max="99999" step="1" value="${esc(s.price ?? 0)}">
     </div>
-    <div class="svcSide"><span class="svcHandle" title="拖曳排序">⠿ 拖曳</span> <button type="button" class="secondary" data-act="moveServiceUp">▲</button> <button type="button" class="secondary" data-act="moveServiceDown">▼</button>
-      <label><input class="svcActive" type="checkbox" ${s.active === false ? '' : 'checked'}> 前台顯示</label>
+    <div class="svcSide">
+      <label><input class="svcActive" type="checkbox" ${s.active === false ? '' : 'checked'}> 前台顯示</label> <button type="button" class="secondary" data-act="moveServiceUp">▲</button> <button type="button" class="secondary" data-act="moveServiceDown">▼</button>
       ${isNew ? '<button type="button" class="danger" data-act="removeNewServiceRow">移除</button>' : ''}
     </div>
   </div>`;
@@ -1224,12 +1224,12 @@ async function saveServices() {
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ services: collectServiceRows() })
     });
-    alert('服務設定已儲存');
+    uiAlert('服務設定已儲存');
     serviceRows = d.services;
     renderServices();
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 
@@ -1244,21 +1244,21 @@ async function deleteReservation(id) {
     await loadCalendar();
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 async function deleteCustomer(cid) {
   if (!await showAdminActionConfirm('確定刪除此客人檔案？其歷史預約會一併移入「回收桶」，可在回收桶還原。', '確定刪除')) return;
   try {
     const d = await api('/api/admin/customers/' + cid, { method: 'DELETE' });
-    alert(`已移入回收桶（含 ${d.reservationsDeleted} 筆預約）`);
+    uiAlert(`已移入回收桶（含 ${d.reservationsDeleted} 筆預約）`);
     adminCalendarCache.clear();
     await loadCustomers();
     await loadAdmin();
     await loadCalendar();
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 async function deleteCustomerHistory(cid, rid) {
@@ -1271,7 +1271,7 @@ async function deleteCustomerHistory(cid, rid) {
     await loadCalendar();
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 
@@ -1316,7 +1316,7 @@ async function loadRecycleBin() {
 async function restoreRecycleItem(id) {
   try {
     await api('/api/admin/recycle-bin/' + id + '/restore', { method: 'POST' });
-    alert('已還原');
+    uiAlert('已還原');
     adminCalendarCache.clear();
     await loadRecycleBin();
     await loadAdmin();
@@ -1324,7 +1324,7 @@ async function restoreRecycleItem(id) {
     await loadCalendar();
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else { alert(e.message); await loadRecycleBin(); }
+    else { uiAlert(e.message); await loadRecycleBin(); }
   }
 }
 async function purgeRecycleItem(id) {
@@ -1334,7 +1334,7 @@ async function purgeRecycleItem(id) {
     await loadRecycleBin();
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 
@@ -1415,14 +1415,14 @@ async function submitAddReservation() {
     body.birthDate = $('addResBirth').value;
     body.phone = $('addResPhone').value;
   }
-  if (!body.date || !body.startTime) { alert('請選擇日期與開始時間'); return; }
+  if (!body.date || !body.startTime) { uiAlert('請選擇日期與開始時間'); return; }
   try {
     await api('/api/admin/reservations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    alert('已建立預約');
+    uiAlert('已建立預約');
     closeAddReservation();
     adminCalendarCache.clear();
     await loadAdmin();
@@ -1430,7 +1430,7 @@ async function submitAddReservation() {
     await loadCalendar();
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 
@@ -1471,12 +1471,12 @@ async function submitAddCustomer() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    alert('已建立客人');
+    uiAlert('已建立客人');
     closeAddCustomer();
     await loadCustomers();
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 
@@ -1516,10 +1516,10 @@ async function backupToDrive() {
 
     if (!r.ok) throw new Error(d.error || 'Google Drive 備份失敗');
 
-    alert('已送出 Google Drive 備份');
+    uiAlert('已送出 Google Drive 備份');
   } catch (e) {
     if (e.message === '未登入') showLogin();
-    else alert(e.message);
+    else uiAlert(e.message);
   }
 }
 

@@ -163,9 +163,9 @@ async function loadSlots(options={}){
     }
   }
 }
-async function showSlots(){if(!state.service)return alert('請先選擇服務項目。');await loadSlots();$('serviceView').classList.add('hidden');$('slotView').classList.remove('hidden');setStep(2);updateSide();}
+async function showSlots(){if(!state.service)return uiAlert('請先選擇服務項目。');await loadSlots();$('serviceView').classList.add('hidden');$('slotView').classList.remove('hidden');setStep(2);updateSide();}
 function timeAddMinutes(start,minutes){const [h,m]=String(start).split(':').map(Number);const total=h*60+m+Number(minutes||0);return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`}
-function showForm(){if(!state.startTime)return alert('請選擇時間。');const s=selectedService();$('formSummary').innerHTML=`日期：${esc(state.date)}<br>服務：${esc(s.name)}（${s.durationMinutes} 分鐘）<br>時間：${esc(state.startTime)}–${esc(timeAddMinutes(state.startTime,s.durationMinutes))}`;$('slotView').classList.add('hidden');$('formView').classList.remove('hidden');setStep(3);}
+function showForm(){if(!state.startTime)return uiAlert('請選擇時間。');const s=selectedService();$('formSummary').innerHTML=`日期：${esc(state.date)}<br>服務：${esc(s.name)}（${s.durationMinutes} 分鐘）<br>時間：${esc(state.startTime)}–${esc(timeAddMinutes(state.startTime,s.durationMinutes))}`;$('slotView').classList.add('hidden');$('formView').classList.remove('hidden');setStep(3);}
 function showConfirm(ev){
   if(ev && typeof ev.preventDefault==='function') ev.preventDefault();
   // Snapshot the selected booking slot BEFORE validation. Validation must never clear it.
@@ -185,7 +185,7 @@ function showConfirm(ev){
   if(missing.length){
     const text='預約資料不完整，請補填：'+missing.join('、');
     if(validation){validation.textContent=text;validation.classList.remove('hidden');}
-    else alert(text);
+    else uiAlert(text);
     // Stay on the form page. Do NOT call loadSlots(), renderServices(), or alter state.
     const target=!name?$('name'):!birthDate?$('birthDate'):!phone?$('phone'):null;
     if(target) target.focus();
@@ -205,7 +205,7 @@ function showConfirm(ev){
   if(!selectedServiceId || !selectedStartTime || !selectedSlots.length){
     const text='預約時間資料遺失，請返回時間頁重新選擇。';
     if(validation){validation.textContent=text;validation.classList.remove('hidden');}
-    else alert(text);
+    else uiAlert(text);
     return false;
   }
   if(validation) {validation.textContent='';validation.classList.add('hidden');}
@@ -216,7 +216,7 @@ function showConfirm(ev){
   setStep(4);
   return true;
 }
-async function submitBooking(){const name=$('name').value.trim(),birthDate=$('birthDate').value,phone=$('phone').value.trim(),note=$('note').value.trim();const missing=[];if(!state.date)missing.push('日期');if(!state.service)missing.push('服務項目');if(!state.startTime)missing.push('開始時間');if(!name)missing.push('姓名');if(!birthDate)missing.push('西元生日');if(!phone)missing.push('電話');if(missing.length){alert('預約資料不完整：'+missing.join('、'));return}try{$('submit').disabled=true;const r=await api('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:state.date,serviceId:state.service,startTime:state.startTime,name,birthDate,phone,note,lineTicket:getLineTicket()||undefined})});state.lastReservation=r.reservation;clearTimeSelection();$('successSummary').innerHTML=`姓名：${esc(r.reservation.name)}<br>生日：${esc(r.reservation.birthDate)}<br>電話：${esc(r.reservation.phone||'—')}<br>預約代碼：<b style="font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.04em">${esc(r.reservation.bookingCode||'—')}</b>${r.reservation.bookingCode?` <button type="button" class="secondary copyBindBtn" data-act="copyBindCode" data-args="${esc(JSON.stringify([r.reservation.bookingCode]))}">複製</button>`:''}（查詢、取消、改期請保存此代碼）<br>服務：${esc(r.reservation.serviceName)}<br>日期：${esc(r.reservation.date)}<br>時間：${esc(r.reservation.startTime)}–${esc(r.reservation.endTime)}${r.lineBindCode&&!r.lineBound?`<br>綁定碼：<b class="bindCode">${esc(r.lineBindCode)}</b> <button type="button" class="secondary copyBindBtn" data-act="copyBindCode" data-args="${esc(JSON.stringify([r.lineBindCode]))}">複製</button><div class="bindHint">（請將綁定碼回傳官方帳號，以利接收預約提醒）</div>`:''}${r.lineBound?'<div class="bindHint">預約前一天會傳送LINE訊息提醒您</div>':''}`;clearLineTicket();$('confirmView').classList.add('hidden');$('successView').classList.remove('hidden');$('lineBindNotice').classList.add('hidden');setStep(4);updateSide();}catch(e){alert(e.message);if(e.message.includes('LINE 登入'))clearLineTicket();if(e.message.includes('時段')||e.message.includes('預約'))await loadSlots()}finally{$('submit').disabled=false}}
+async function submitBooking(){const name=$('name').value.trim(),birthDate=$('birthDate').value,phone=$('phone').value.trim(),note=$('note').value.trim();const missing=[];if(!state.date)missing.push('日期');if(!state.service)missing.push('服務項目');if(!state.startTime)missing.push('開始時間');if(!name)missing.push('姓名');if(!birthDate)missing.push('西元生日');if(!phone)missing.push('電話');if(missing.length){uiAlert('預約資料不完整：'+missing.join('、'));return}try{$('submit').disabled=true;const r=await api('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:state.date,serviceId:state.service,startTime:state.startTime,name,birthDate,phone,note,lineTicket:getLineTicket()||undefined})});state.lastReservation=r.reservation;clearTimeSelection();$('successSummary').innerHTML=`姓名：${esc(r.reservation.name)}<br>生日：${esc(r.reservation.birthDate)}<br>電話：${esc(r.reservation.phone||'—')}<br>預約代碼：<b style="font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.04em">${esc(r.reservation.bookingCode||'—')}</b>${r.reservation.bookingCode?` <button type="button" class="secondary copyBindBtn" data-act="copyBindCode" data-args="${esc(JSON.stringify([r.reservation.bookingCode]))}">複製</button>`:''}（查詢、取消、改期請保存此代碼）<br>服務：${esc(r.reservation.serviceName)}<br>日期：${esc(r.reservation.date)}<br>時間：${esc(r.reservation.startTime)}–${esc(r.reservation.endTime)}${r.lineBindCode&&!r.lineBound?`<br>綁定碼：<b class="bindCode">${esc(r.lineBindCode)}</b> <button type="button" class="secondary copyBindBtn" data-act="copyBindCode" data-args="${esc(JSON.stringify([r.lineBindCode]))}">複製</button><div class="bindHint">（請將綁定碼回傳官方帳號，以利接收預約提醒）</div>`:''}${r.lineBound?'<div class="bindHint">預約前一天會傳送LINE訊息提醒您</div>':''}`;clearLineTicket();$('confirmView').classList.add('hidden');$('successView').classList.remove('hidden');$('lineBindNotice').classList.add('hidden');setStep(4);updateSide();}catch(e){uiAlert(e.message);if(e.message.includes('LINE 登入'))clearLineTicket();if(e.message.includes('時段')||e.message.includes('預約'))await loadSlots()}finally{$('submit').disabled=false}}
 async function copyBindCode(code, btn){
   try { await navigator.clipboard.writeText(String(code)); }
   catch (e) {
@@ -246,10 +246,10 @@ async function restoreLineReturn(){
   const q=new URLSearchParams(location.search);
   const err=q.get('line_error'), tok=q.get('line_ticket');
   if(tok){ saveLineTicket(tok); history.replaceState(null,'',location.pathname); }
-  else if(err){ history.replaceState(null,'',location.pathname); alert('LINE 登入未完成（'+err+'）。您仍可按「確認預約」，之後用綁定碼綁定。'); }
+  else if(err){ history.replaceState(null,'',location.pathname); uiAlert('LINE 登入未完成（'+err+'）。您仍可按「確認預約」，之後用綁定碼綁定。'); }
   renderLineSlot();
 }
-(async()=>{state.config=await api('/api/config');state.month=new Date(state.config.today+'T00:00:00');await renderCalendar();await restoreLineReturn()})().catch(e=>alert(e.message));
+(async()=>{state.config=await api('/api/config');state.month=new Date(state.config.today+'T00:00:00');await renderCalendar();await restoreLineReturn()})().catch(e=>uiAlert(e.message));
 
 // ===== CSP 相容事件委派（取代內嵌 on* 屬性）=====
 const ACTIONS = {

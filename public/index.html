@@ -75,7 +75,8 @@ label{display:block;margin:14px 0 7px;color:#5e5268}input{width:100%;padding:13p
   .lineSlot img{max-width:100%;height:auto}
   #manageBookingBtn,#myReservationsLink{order:2;flex:1 1 100%}
 }
-@media(max-width:800px){header>div:first-child{flex:1 1 100%!important;min-width:0}#manageBookingBtn,#myReservationsLink{width:auto!important;order:2!important;flex:0 0 auto!important;margin:0 8px 0 auto!important;font-size:13px!important;padding:8px 12px!important}header .lineSlot{order:3!important;flex:0 0 auto!important;margin:0 0 0 8px!important;max-width:none!important;width:auto!important}header .lineSlot img{height:auto;width:auto}}
+@media(max-width:800px){header>div:first-child{flex:1 1 100%!important;min-width:0}#manageBookingBtn,#myReservationsLink{width:auto!important;order:2!important;flex:0 0 auto!important;margin:0 8px 0 auto!important;font-size:13px!important;padding:0 12px!important;height:36px!important;min-height:36px!important;box-sizing:border-box!important;align-items:center}header .lineSlot{order:3!important;flex:0 0 auto!important;margin:0 0 0 8px!important;max-width:none!important;width:auto!important}header .lineSlot img{height:36px!important;width:auto!important}}
+@media(min-width:801px){#manageBookingBtn,#myReservationsLink{margin-left:auto!important;margin-right:0!important}.lineSlot{margin-left:0!important}}
 </style>
 </head>
 <body>
@@ -84,7 +85,7 @@ label{display:block;margin:14px 0 7px;color:#5e5268}input{width:100%;padding:13p
 <main>
 <section class="glass panel">
 <div class="steps"><span class="step active">1 選擇日期</span><span class="step">2 選擇服務</span><span class="step">3 選擇時間</span><span class="step">4 填寫資料</span><span class="step">5 確認</span></div>
-<div id="dateView"><h2>選擇日期</h2><div class="hint" style="font-size:150%">當日不可預約；僅開放三個月內日期預約</div><div class="calendarHead"><button id="prevMonth" class="secondary">‹</button><strong id="monthTitle"></strong><button id="nextMonth" class="secondary">›</button></div><div class="calendar" id="calendar"></div></div>
+<div id="dateView"><h2>選擇日期</h2><div class="hint" style="font-size:19px">當日不可預約；僅開放三個月內日期預約</div><div class="calendarHead"><button id="prevMonth" class="secondary">‹</button><strong id="monthTitle"></strong><button id="nextMonth" class="secondary">›</button></div><div class="calendar" id="calendar"></div></div>
 <div id="serviceView" class="hidden"><h2>選擇服務</h2><div class="hint" id="serviceHint"></div><div class="serviceGrid" id="serviceGrid"></div><div class="actions"><button type="button" id="backDate" class="secondary">返回日期</button><button type="button" id="toSlots">下一步</button></div></div>
 <div id="slotView" class="hidden"><h2>選擇時間</h2><p id="selectedDateText"></p><div class="slots" id="slots"></div><div class="actions"><button type="button" id="backService" class="secondary">返回服務</button><button type="button" id="toForm">下一步</button></div></div>
 <div id="formView" class="hidden"><h2>填寫資料</h2><label for="name">姓名</label><input id="name" maxlength="100" autocomplete="name" placeholder="請輸入姓名"><label for="birthDate">西元生日</label><input id="birthDate" type="date" min="1900-01-01" autocomplete="bday"><label for="phone">電話</label><input id="phone" type="tel" maxlength="30" autocomplete="tel" inputmode="tel" placeholder="請輸入電話"><label for="note">有什麼想對我說的話嗎？或是你此刻的心情</label><textarea id="note" maxlength="500" rows="4" placeholder="請輸入"></textarea><div class="summaryBox" id="formSummary"></div><div id="formValidation" class="notice hidden" role="alert"></div><div class="actions"><button type="button" id="backSlot" class="secondary">返回時間</button><button id="toConfirm" type="button">確認資料</button></div></div>
@@ -94,5 +95,6 @@ label{display:block;margin:14px 0 7px;color:#5e5268}input{width:100%;padding:13p
 
 </main>
 </div>
+<script src="/js/ui-dialog.js"></script>
 <script src="/js/index.js"></script>
 </body></html>

@@ -35,7 +35,7 @@
     await loadList();
   }
   async function cancelRes(id) {
-    if (!confirm('確定要取消這筆預約嗎？取消後該時段會重新開放。')) return;
+    if (!(await uiConfirm('確定要取消這筆預約嗎？取消後該時段會重新開放。'))) return;
     try { await api(`/api/my/reservations/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', body: {} }); notice('預約已取消。'); await loadList(); }
     catch (e) { notice(e.message, true); }
   }
