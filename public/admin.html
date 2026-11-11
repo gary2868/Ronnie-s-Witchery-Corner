@@ -200,6 +200,18 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
   div:has(> #tabCalendar) > button.active{border-color:var(--violet)!important;background:rgba(142,118,183,.16)!important}
   #adminPanel{margin-left:0;padding-bottom:96px}
 }
+
+/* ===== 後台卡片與按鈕（第二階段）：參考網站的圓角、淺邊框與柔和陰影；配色沿用 :root 變數 ===== */
+#adminPanel .glass,#adminPanel .booking,#adminPanel .card{border-radius:18px;border:1px solid #ece4f3;box-shadow:0 6px 22px rgba(77,59,103,.07)}
+#adminPanel .booking{padding:16px 18px;margin-bottom:12px}
+#adminPanel h2{font-size:20px;font-weight:700;color:var(--violet-dark);letter-spacing:.02em;margin:0 0 12px}
+#adminPanel h3{font-size:16px;font-weight:700;color:var(--ink);margin:0 0 8px}
+#adminPanel .hint{background:#f7f1fb;border-radius:12px;padding:12px 16px;color:var(--muted);line-height:1.6}
+#adminPanel input:not([type=checkbox]),#adminPanel select,#adminPanel textarea{border-radius:12px;border:1px solid #e3d9ee;background:#fff;padding:9px 12px;color:var(--ink)}
+#adminPanel input:focus,#adminPanel select:focus,#adminPanel textarea:focus{outline:none;border-color:var(--violet);box-shadow:0 0 0 3px rgba(142,118,183,.18)}
+#adminPanel button{border-radius:12px}
+#adminPanel .glass>h2:first-child{margin-top:0}
+@media(max-width:800px){#adminPanel .booking{padding:14px}#adminPanel h2{font-size:18px}}
 </style>
 </head>
 <body>
