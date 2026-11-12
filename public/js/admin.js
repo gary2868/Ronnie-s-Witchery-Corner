@@ -167,6 +167,7 @@ async function importDataFromFile(file) {
 }
 
 function showTab(name) {
+  if (name === 'reservation') name = 'calendar'; // 合併行事曆（單一分頁）
   ['calendar','reservation','customer','closure','service','recycle'].forEach(x => {
     $(x + 'View').classList.toggle('hidden', x !== name);
   });
@@ -184,6 +185,7 @@ function showTab(name) {
   $('tabServices').classList.toggle('secondary', name !== 'service');
   $('tabRecycle').classList.toggle('active', name === 'recycle');
   $('tabRecycle').classList.toggle('secondary', name !== 'recycle');
+  if (name === 'calendar') $('reservationView').classList.remove('hidden'); // 合併行事曆（單一分頁）：右側當日區一併顯示
 }
 
 const adminCalendarCache = new Map();
@@ -582,7 +584,7 @@ async function loadAdmin() {
         renderAccordion('cancelled', 'Cancelled', cancelled, cardsHtml);
     } else {
       // 已選擇日期：維持單一清單（三區順序不變）
-      $('adminContent').innerHTML = cardsHtml(list);
+      $('adminContent').innerHTML = dayRowsHtml(list);
     }
 
   } catch (e) {
@@ -916,7 +918,7 @@ function renderCustomers() {
                   </button>
                   <br>客人的備註：${esc(h.note || '—')}
                   <br>我的備註：${esc(h.myNote || '—')}
-                  <br>預定狀態：${esc(historyStatus)}${h.statusLabel === 'Other' && h.otherStatus ? '（' + esc(h.otherStatus) + '）' : ''}
+                  <br>預定狀態：${esc(historyStatus)}${historyCancelled ? '' : `<br><button class="secondary" data-act="cancelBooking" data-args="${esc(JSON.stringify([encodeURIComponent(h.reservationId || '')]))}">取消</button>`}<button class="secondary" data-act="showHistoryDetail" data-args="${esc(JSON.stringify([encodeURIComponent(h.reservationId || ''), String(h.date || '').slice(0,10)]))}">詳細</button>${h.statusLabel === 'Other' && h.otherStatus ? '（' + esc(h.otherStatus) + '）' : ''}
                   <br><button class="secondary" data-act="deleteCustomerHistory" data-args="${esc(JSON.stringify([encodeURIComponent(c.id),encodeURIComponent(h.reservationId || '')]))}">刪除此筆紀錄</button>
                 </div>`;
               }).join('<hr>') || '尚無歷史預約'}
@@ -1620,6 +1622,8 @@ const ACTIONS = {
   deleteCustomerHistory: (el, ...a) => deleteCustomerHistory(...a),
   deleteClosure: (el, ...a) => deleteClosure(...a),
   removeNewServiceRow: (el) => removeNewServiceRow(el),
+  showHistoryDetail: (el, rid, date) => showHistoryDetail(el, rid, date),
+  openCrmForCustomer: (el, cid) => openCrmForCustomer(cid),
   moveServiceUp: (el) => moveServiceRow(el, -1),
   moveServiceDown: (el) => moveServiceRow(el, 1),
   restoreRecycleItem: (el, ...a) => restoreRecycleItem(...a),
@@ -1678,3 +1682,49 @@ document.addEventListener('drop', e => {
   const [moved] = cur.splice(dragServiceIdx, 1); cur.splice(to, 0, moved);
   dragServiceIdx = null; serviceRows = cur; renderServices();
 });
+// ===== 合併行事曆（單一分頁）：左側月曆、右側當日預約（DOM 重新排列，既有 id 與功能不變）=====
+(function mergeCalendarLayout(){
+  const cal = document.getElementById('calendarView'), day = document.getElementById('reservationView');
+  if (!cal || !day || cal.parentElement.classList.contains('dayLayout')) return;
+  const wrap = document.createElement('div'); wrap.className = 'dayLayout';
+  cal.parentElement.insertBefore(wrap, cal);
+  const left = document.createElement('div'); left.className = 'dayLeft';
+  const right = document.createElement('div'); right.className = 'dayRight';
+  wrap.append(left, right); left.appendChild(cal); right.appendChild(day);
+  const t = document.getElementById('tabReservations'); if (t) t.style.display = 'none';
+})();
+// ===== 當日列表精簡（第十四步）=====
+function dayRowsHtml(arr){
+  if (!arr.length) return '目前沒有預約紀錄。';
+  return '<div class="dayRows">' + arr.map(r => {
+    const cid = encodeURIComponent(r.customerId || r.customer_id || '');
+    const st = r.status === 'CANCELLED' ? '已取消' : (r.statusLabel || '已確認');
+    return '<div class="dayRow">' +
+      '<span class="dayTime">' + esc(r.startTime || '') + '–' + esc(r.endTime || '') + '</span>' +
+      '<button type="button" class="dayName" data-act="openCrmForCustomer" data-args="' + esc(JSON.stringify([cid])) + '">' + esc(r.name || '') + '</button>' +
+      '<span class="dayService">' + esc(r.serviceName || '') + '</span>' +
+      '<span class="dayDur">' + esc(r.durationMinutes || '') + ' 分鐘</span>' +
+      '<span class="dayStatus">' + esc(st) + '</span>' +
+      '</div>';
+  }).join('') + '</div>';
+}
+async function openCrmForCustomer(cid){
+  const id = decodeURIComponent(cid || ''); if (!id) return;
+  showTab('customer');
+  await loadCustomers();
+  renderCustomers();
+  const box = document.querySelector('#customerContent .customer .custHistory input[id="ct-' + CSS.escape(id) + '"]');
+  const card = box ? box.closest('.customer') : null;
+  if (card) { const h = card.querySelector('.custHistory'); if (h) h.classList.remove('hidden'); card.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+}
+async function showHistoryDetail(el, rid, date){
+  const id = decodeURIComponent(rid || ''); const day = decodeURIComponent(date || '');
+  const item = el.closest('.customerHistoryItem'); if (!item) return;
+  const old = item.querySelector('.histDetail'); if (old) { old.remove(); return; }
+  const list = await api('/api/admin/reservations?date=' + encodeURIComponent(day));
+  const arr = Array.isArray(list) ? list : (list.reservations || []);
+  const r = arr.find(x => x.id === id);
+  const box = document.createElement('div'); box.className = 'histDetail';
+  box.innerHTML = r ? renderBookingCard(r) : '找不到此預約的詳細資料。';
+  item.appendChild(box);
+}

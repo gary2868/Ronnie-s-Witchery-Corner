@@ -229,6 +229,15 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 }
 </style>
 <link rel="icon" href="data:,">
+<style>
+/* 合併行事曆（單一分頁）：電腦左月曆右當日；手機上下 */
+.dayLayout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;align-items:start}
+.dayLayout .dayRight{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+.dayRows{display:grid;gap:6px}.dayRow{display:grid;grid-template-columns:110px minmax(0,1fr) minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:10px 12px;border:1px solid #ece4f3;border-radius:14px;background:#fff}
+.dayName{background:none;border:0;padding:0;color:var(--violet-dark);font-weight:700;text-align:left;cursor:pointer}
+.dayTime,.dayDur,.dayStatus{color:var(--muted);font-size:13px}
+@media(max-width:800px){.dayLayout{grid-template-columns:1fr;gap:12px}.dayLayout .dayRight{position:static;max-height:none}.dayRow{grid-template-columns:1fr 1fr}}
+</style>
 </head>
 <body>
 <div id="importConfirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="importConfirmText">
@@ -258,7 +267,7 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 
 <section id="adminPanel" class="glass panel hidden">
   <div class="tabs">
-    <button id="tabCalendar" class="tab active">行事曆</button>
+    <button id="tabCalendar" class="tab active">預約行事曆</button>
     <button id="tabReservations" class="tab secondary">預約行事曆</button>
     <button id="tabCustomers" class="tab secondary">客戶 CRM</button>
     <button id="tabClosures" class="tab secondary">公休設定</button>
