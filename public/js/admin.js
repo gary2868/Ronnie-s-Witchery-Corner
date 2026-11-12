@@ -678,7 +678,7 @@ async function showDetail(id) {
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               ${['Finished','Cancel','No-show','Other'].map(v => `<button type="button" class="secondary statusChoice ${status === v ? 'selected' : ''}" ${lockedCancelled && v !== 'Cancel' ? 'disabled style="opacity:.4;cursor:not-allowed"' : ''} data-act="chooseStatus" data-args="${esc(JSON.stringify([v]))}">${v}</button>`).join('')}
               <input id="otherStatusInput" data-in="previewReservationStatus" data-args="${esc(JSON.stringify(['Other']))}" class="${status === 'Other' ? '' : 'hidden'}" maxlength="100" placeholder="請輸入自定義狀態" value="${esc(x.otherStatus || '')}" style="max-width:220px;flex:1 1 180px">
-              <button class="primary" style="margin-left:auto" data-act="saveReservationDetail" data-args="${esc(JSON.stringify([encodeURIComponent(x.id)]))}">儲存</button>
+              <button class="primary" style="display:none" data-act="saveReservationDetail" data-args="${esc(JSON.stringify([encodeURIComponent(x.id)]))}">儲存</button>
             </div>
           </div>
         </div>
@@ -696,7 +696,7 @@ async function showDetail(id) {
   }
 }
 
-function chooseStatus(v) {
+function chooseStatusLegacy(v) {
   // 已取消的預約時段已釋放，不可改回其他狀態
   if (isCancelledReservation(window.currentDetailReservation) && v !== 'Cancel') return;
 
@@ -1973,6 +1973,7 @@ function crmCleanRoot(root){
   kill.forEach(el => { if (el.isConnected) el.remove(); });
   root.querySelectorAll('button').forEach(b => { if ((b.textContent || '').trim() === 'Other') b.remove(); });
   root.querySelectorAll('input[placeholder="新增標籤"], textarea').forEach(el => el.remove());
+  root.querySelectorAll('[data-act="saveReservationDetail"]').forEach(el => el.remove());
   // 預定狀態列：橫列並移除自訂輸入框（Other 的文字框）
   const nsBtn = [...root.querySelectorAll('button')].find(b => (b.textContent || '').trim() === 'No-show');
   if (nsBtn && nsBtn.parentElement) {
@@ -1992,3 +1993,48 @@ function crmCleanOpenDetails(el){
   const root = el && el.closest ? el.closest('.crmResOpen') : null;
   if (root) crmCleanRoot(root);
 }
+// ===== 預定狀態：點按鍵直接儲存（第二十八步）=====
+async function chooseStatus(v){
+  const r = window.currentDetailReservation;
+  if (!r || !r.id) { uiAlert('找不到此預約'); return; }
+  const id = r.id;
+  if (v === 'Other') {
+    window.selectedReservationStatus = 'Other';
+    document.querySelectorAll('.statusChoice').forEach(b => b.classList.toggle('selected', b.textContent === 'Other'));
+    const input = $('otherStatusInput'); if (input) { input.classList.remove('hidden'); input.focus(); }
+    return;
+  }
+  try {
+    if (v === 'Cancel') {
+      if (isCancelledReservation(r)) return;
+      if (!await showAdminActionConfirm('選擇 Cancel 會取消此筆預約，時段會恢復可預約。確定取消？', '確定取消')) return;
+      await api('/api/admin/reservations/' + id + '/cancel', { method: 'PATCH' });
+    } else {
+      await api('/api/admin/reservations/' + id + '/status', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statusLabel: v })
+      });
+    }
+    await refreshAfterStatus();
+  } catch (e) {
+    uiAlert(e.message);
+  }
+}
+async function refreshAfterStatus(){
+  try { await loadAdmin(); } catch (e) {}
+  if (typeof crmView !== 'undefined' && crmView && crmView.mode === 'detail') { try { await loadCustomers(); } catch (e) {} }
+}
+// Other：輸入自定義文字後離開輸入框即儲存
+document.addEventListener('change', async e => {
+  if (!e.target || e.target.id !== 'otherStatusInput') return;
+  const r = window.currentDetailReservation; if (!r || !r.id) return;
+  const text = String(e.target.value || '').trim();
+  if (!text) { uiAlert('請輸入 Other 的自定義狀態'); return; }
+  try {
+    await api('/api/admin/reservations/' + r.id + '/status', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ statusLabel: 'Other', otherStatus: text })
+    });
+    await refreshAfterStatus();
+  } catch (err) { uiAlert(err.message); }
+});
