@@ -1760,7 +1760,7 @@ function crmStats(c){
   const list = crmResFor(c), today = crmToday();
   const done = list.filter(r => r.status !== 'CANCELLED' && r.statusLabel === 'Finished');
   const pastDone = done.map(r => String(r.date)).filter(d => d < today).sort();
-  const future = list.filter(r => r.status === 'CONFIRMED' && String(r.date) > today).map(r => String(r.date)).sort();
+  const future = list.filter(crmIsFuture).map(r => String(r.date)).sort();
   const all = list.map(r => String(r.date)).sort();
   return {
     done: done.length,
@@ -1788,7 +1788,7 @@ function crmTags(c){ return (Array.isArray(c.tags) ? c.tags : []).map(t => '<em 
 function renderCustomers(){
   if (crmView.mode === 'detail') return renderCustomerDetail();
   const all = customers || [];
-  const withFuture = crmRes.filter(r => r.status === 'CONFIRMED' && String(r.date) > crmToday()).length;
+  const withFuture = crmRes.filter(crmIsFuture).length;
   const rows = crmFilterCustomers().map(c => ({ c, s: crmStats(c) }));
   $('customerContent').innerHTML =
     '<div class="crmSummary"><div><span>總客戶</span><b>' + all.length + '</b></div><div><span>未來預約</span><b>' + withFuture + '</b></div></div>' +
@@ -1845,7 +1845,7 @@ function renderCustomerDetail(){
   let body = '';
   if (crmView.tab === 'overview') {
     const latest = list[0];
-    const next = list.find(r => r.status === 'CONFIRMED' && String(r.date) > crmToday());
+    const next = list.find(crmIsFuture);
     body = '<div class="crmGrid">' + '<div class="crmCard"><h3>我的備註</h3>' + (c.staffNote ? esc(c.staffNote) : '<span class="crmMuted">尚未填寫（總覽：我的備註）</span>') + '</div>' +
       '<div class="crmCard"><h3>客戶資料</h3>生日：' + esc(c.birthDate || '—') + '<br>首次預約：' + esc(s.first || '—') + '</div>' +
       '<div class="crmCard"><h3>最近活動</h3>' + (latest ? esc(latest.date) + ' · ' + esc(latest.serviceName || '') + ' · ' + esc(crmStatusText(latest)) : '尚無預約') + '</div>' +
@@ -2081,7 +2081,7 @@ function crmMatchFilterV2(r, f){
   const endKey = String(r.date) + ' ' + crmHm(r.endTime);
   const startKey = String(r.date) + ' ' + crmHm(r.startTime);
   const cancelled = r.status === 'CANCELLED';
-  if (f === 'future') return !cancelled && r.status === 'CONFIRMED' && startKey > now;
+  if (f === 'future') return crmIsFuture(r);
   if (f === 'done') return !cancelled && endKey <= now;
   if (f === 'cancelled') return cancelled;
   return true;
@@ -2132,4 +2132,8 @@ async function crmDeleteRes(encId){
 function crmDiagDetail(){
   const box = document.querySelector('.crmDetailBox');
   return { boxExists: !!box, boxLen: box ? box.innerHTML.length : -1, current: window.currentDetailReservation ? window.currentDetailReservation.id : null };
+}
+// 未來預約（統一規則）：已確認，且開始時間晚於現在（台北時間）
+function crmIsFuture(r){
+  return r.status === 'CONFIRMED' && (String(r.date) + ' ' + crmHm(r.startTime)) > crmNowKey();
 }
