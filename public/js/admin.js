@@ -1785,10 +1785,10 @@ function crmTags(c){ return (Array.isArray(c.tags) ? c.tags : []).map(t => '<em 
 function renderCustomers(){
   if (crmView.mode === 'detail') return renderCustomerDetail();
   const all = customers || [];
-  const withFuture = all.filter(c => crmStats(c).futureCount > 0).length;
+  const withFuture = crmRes.filter(r => r.status === 'CONFIRMED' && String(r.date) > crmToday()).length;
   const rows = crmFilterCustomers().map(c => ({ c, s: crmStats(c) }));
   $('customerContent').innerHTML =
-    '<div class="crmSummary"><div><span>總客戶</span><b>' + all.length + '</b></div><div><span>有未來預約</span><b>' + withFuture + '</b></div></div>' +
+    '<div class="crmSummary"><div><span>總客戶</span><b>' + all.length + '</b></div><div><span>未來預約</span><b>' + withFuture + '</b></div></div>' +
     '<div class="crmTable"><div class="crmHead"><span>客戶</span><span>電話</span><span>最近到訪</span><span>下一次預約</span><span>累計完成</span></div>' +
     (rows.length ? rows.map(({ c, s }) =>
       '<div class="crmRow" data-act="openCustomerDetail" data-args="' + esc(JSON.stringify([encodeURIComponent(c.id)])) + '">' +
