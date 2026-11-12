@@ -1704,7 +1704,7 @@ function dayRowsHtml(arr){
   if (!arr.length) return '目前沒有預約紀錄。';
   const hm = s => String(s || '').slice(0, 5);
   const sorted = arr.slice().sort((a, b) =>
-    String(b.date || '').localeCompare(String(a.date || '')) || String(b.startTime || '').localeCompare(String(a.startTime || '')));
+    String(a.date || '').localeCompare(String(b.date || '')) || String(a.startTime || '').localeCompare(String(b.startTime || '')));
   return '<div class="dayRows">' + sorted.map(r => {
     const cid = encodeURIComponent(r.customerId || r.customer_id || '');
     const phone = String(r.phone || '');
@@ -1857,7 +1857,7 @@ function renderCustomerDetail(){
         '<span>' + esc(String(r.date)) + ' ' + esc(crmHm(r.startTime)) + '–' + esc(crmHm(r.endTime)) + '</span>' +
         '<span>' + esc(r.serviceName || '') + '</span><span>' + esc(r.durationMinutes || '') + ' 分鐘</span>' +
         '<span class="crmStatus">' + esc(crmStatusText(r)) + '</span></div>' +
-        (open ? '<div class="crmResOpen">' + renderBookingCard(r) + '</div>' : '');
+        (open ? '<div class="crmResOpen">' + crmCardClean(r) + '</div>' : '');
     }).join('') : '<div class="crmEmpty">沒有符合的預約</div>';
   } else {
     body = '<div class="crmCard"><h3>標籤</h3>' + (Array.isArray(c.tags) && c.tags.length ? crmTags(c) : '尚無標籤') +
@@ -1889,4 +1889,15 @@ async function openCrmForCustomer(cid, phone){
     (customers || []).find(x => crmDigits(x.phone) && crmDigits(x.phone) === crmDigits(phone));
   if (!c) { alert('找不到此客戶的檔案'); return; }
   openCustomerDetail(encodeURIComponent(c.id));
+}
+// ===== CRM 預約紀錄展開卡片：不顯示標籤區塊（標籤改由客戶備註管理）=====
+function crmCardClean(r){
+  const wrap = document.createElement('div');
+  wrap.innerHTML = renderBookingCard(r);
+  wrap.querySelectorAll('input[placeholder="新增標籤"]').forEach(inp => {
+    let row = inp.parentElement;
+    while (row && row !== wrap && row.textContent.trim().length > 120) row = row.parentElement;
+    (row && row !== wrap ? row : inp).remove();
+  });
+  return wrap.innerHTML;
 }
