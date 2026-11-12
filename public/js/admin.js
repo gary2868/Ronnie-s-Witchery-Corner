@@ -1623,7 +1623,7 @@ const ACTIONS = {
   deleteClosure: (el, ...a) => deleteClosure(...a),
   removeNewServiceRow: (el) => removeNewServiceRow(el),
   showHistoryDetail: (el, rid, date) => showHistoryDetail(el, rid, date),
-  openCrmForCustomer: (el, cid) => openCrmForCustomer(cid),
+  openCrmForCustomer: (el, cid, phone) => openCrmForCustomer(cid, phone),
   moveServiceUp: (el) => moveServiceRow(el, -1),
   moveServiceDown: (el) => moveServiceRow(el, 1),
   restoreRecycleItem: (el, ...a) => restoreRecycleItem(...a),
@@ -1693,29 +1693,37 @@ document.addEventListener('drop', e => {
   wrap.append(left, right); left.appendChild(cal); right.appendChild(day);
   const t = document.getElementById('tabReservations'); if (t) t.style.display = 'none';
 })();
-// ===== 當日列表精簡（第十四步）=====
+// ===== 當日列表修正（時分、降序、整列點擊）=====
 function dayRowsHtml(arr){
   if (!arr.length) return '目前沒有預約紀錄。';
-  return '<div class="dayRows">' + arr.map(r => {
+  const hm = s => String(s || '').slice(0, 5);
+  const sorted = arr.slice().sort((a, b) =>
+    String(b.date || '').localeCompare(String(a.date || '')) || String(b.startTime || '').localeCompare(String(a.startTime || '')));
+  return '<div class="dayRows">' + sorted.map(r => {
     const cid = encodeURIComponent(r.customerId || r.customer_id || '');
+    const phone = String(r.phone || '');
     const st = r.status === 'CANCELLED' ? '已取消' : (r.statusLabel || '已確認');
-    return '<div class="dayRow">' +
-      '<span class="dayTime">' + esc(r.startTime || '') + '–' + esc(r.endTime || '') + '</span>' +
-      '<button type="button" class="dayName" data-act="openCrmForCustomer" data-args="' + esc(JSON.stringify([cid])) + '">' + esc(r.name || '') + '</button>' +
+    return '<div class="dayRow" data-act="openCrmForCustomer" data-args="' + esc(JSON.stringify([cid, phone])) + '">' +
+      '<span class="dayTime">' + esc(hm(r.startTime)) + '–' + esc(hm(r.endTime)) + '</span>' +
+      '<span class="dayName">' + esc(r.name || '') + '</span>' +
       '<span class="dayService">' + esc(r.serviceName || '') + '</span>' +
       '<span class="dayDur">' + esc(r.durationMinutes || '') + ' 分鐘</span>' +
       '<span class="dayStatus">' + esc(st) + '</span>' +
       '</div>';
   }).join('') + '</div>';
 }
-async function openCrmForCustomer(cid){
-  const id = decodeURIComponent(cid || ''); if (!id) return;
+async function openCrmForCustomer(cid, phone){
+  const id = decodeURIComponent(cid || '');
   showTab('customer');
   await loadCustomers();
   renderCustomers();
-  const box = document.querySelector('#customerContent .customer .custHistory input[id="ct-' + CSS.escape(id) + '"]');
-  const card = box ? box.closest('.customer') : null;
-  if (card) { const h = card.querySelector('.custHistory'); if (h) h.classList.remove('hidden'); card.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  const find = () => [...document.querySelectorAll('#customerContent .customer')].find(card =>
+    (id && card.querySelector('input[id="ct-' + CSS.escape(id) + '"]')) || (phone && card.textContent.includes(phone)));
+  let card = find();
+  if (!card && phone) { $('customerSearch').value = phone; renderCustomers(); card = find(); }
+  if (!card) { alert('找不到此客戶的檔案'); return; }
+  const h = card.querySelector('.custHistory'); if (h) h.classList.remove('hidden');
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 async function showHistoryDetail(el, rid, date){
   const id = decodeURIComponent(rid || ''); const day = decodeURIComponent(date || '');
