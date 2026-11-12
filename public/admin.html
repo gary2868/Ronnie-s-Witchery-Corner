@@ -263,6 +263,13 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 .crmNote[readonly]{background:#faf7fd;color:var(--ink)}
 .crmNoteActions{display:flex;justify-content:flex-end;margin-top:8px}
 </style>
+<style>
+/* 預約紀錄展開區：整體為卡片，按鍵置於卡片內右下角 */
+.crmOpenCard{background:#fff;border:1px solid #ece4f3;border-radius:16px;box-shadow:0 6px 20px rgba(77,59,103,.07);margin:-2px 0 12px 0;overflow:hidden}
+.crmOpenCard .crmDetailBox{padding:4px 0}
+.crmOpenCard .crmDetailBox:empty{min-height:80px}
+.crmDetailBar{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid #ece4f3;background:#faf7fd}
+</style>
 </head>
 <body>
 <div id="importConfirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="importConfirmText">

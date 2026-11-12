@@ -2089,7 +2089,7 @@ function crmMatchFilterV2(r, f){
 // ===== A) 預約紀錄：點列直接展開詳細資訊 =====
 function crmDetailOnly(r){
   const enc = encodeURIComponent(r.id);
-  return '<div class="crmResOpen" data-rid="' + esc(r.id) + '">' +
+  return '<div class="crmResOpen crmOpenCard" data-rid="' + esc(r.id) + '">' +
     '<div id="detail-' + enc + '" class="crmDetailBox"></div>' +
     '<div class="crmDetailBar">' +
       '<button class="danger" data-act="crmDeleteRes" data-args="' + esc(JSON.stringify([enc])) + '">刪除</button>' +
@@ -2100,6 +2100,12 @@ async function crmLoadOpenDetail(encId){
   const box = $('detail-' + encId);
   if (!box || box.innerHTML.trim()) return;
   await showDetail(encId);
+  // 載入後仍為空：稍後自動重試一次（避免列表重新繪製造成的時序問題）
+  if (!$('detail-' + encId) || !$('detail-' + encId).innerHTML.trim()) {
+    await new Promise(res => setTimeout(res, 300));
+    const again = $('detail-' + encId);
+    if (again && !again.innerHTML.trim()) await showDetail(encId);
+  }
   const b2 = $('detail-' + encId);
   if (b2) crmCleanOpenDetails(b2);
 }
@@ -2122,3 +2128,8 @@ async function crmDeleteRes(encId){
   const nav = document.getElementById('tabBackup');
   if (nav) nav.addEventListener('click', () => showTab('backup'));
 })();
+// 診斷輔助（仍空白時於 Console 執行：crmDiagDetail()）
+function crmDiagDetail(){
+  const box = document.querySelector('.crmDetailBox');
+  return { boxExists: !!box, boxLen: box ? box.innerHTML.length : -1, current: window.currentDetailReservation ? window.currentDetailReservation.id : null };
+}
