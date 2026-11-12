@@ -1859,6 +1859,7 @@ const server = http.createServer(async (req, res) => {
         const customers=readJson(CUSTOMERS_FILE,[]).sort((a,b)=>a.name.localeCompare(b.name,'zh-Hant')); return json(res,200,customers);
       }
       if (req.method === 'GET' && u.pathname === '/api/admin/reservations') {
+        await sweepExpiredToFinished();
         const date = u.searchParams.get('date');
         const status = u.searchParams.get('status');
         let list = readJson(RESERVATIONS_FILE, []);
@@ -2269,3 +2270,15 @@ async function startServer() {
   server.listen(CONFIG.port, () => console.log(`Ronnie's Witchery Corner booking system: http://localhost:${CONFIG.port}`));
 }
 startServer().catch(error => { console.error('Data store initialization failed:', error); process.exit(1); });
+// 已過期、未取消、且沒有預定狀態的預約 → 自動標記為 Finished（會保存；手動設定過的不覆寫）
+async function sweepExpiredToFinished(){
+  const reservations = readJson(RESERVATIONS_FILE, []);
+  let changed = 0;
+  for (const item of reservations) {
+    if (item.status !== 'CANCELLED' && !item.statusLabel && reservationHasEnded(item)) {
+      item.statusLabel = 'Finished';
+      changed++;
+    }
+  }
+  if (changed) await queueWrite(RESERVATIONS_FILE, reservations);
+}
