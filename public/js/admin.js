@@ -1973,6 +1973,8 @@ function crmCleanRoot(root){
   kill.forEach(el => { if (el.isConnected) el.remove(); });
   root.querySelectorAll('button').forEach(b => { if ((b.textContent || '').trim() === 'Other') b.remove(); });
   root.querySelectorAll('input[placeholder="新增標籤"], textarea').forEach(el => el.remove());
+  root.querySelectorAll('button.statusChoice').forEach(b => { if (b.textContent.trim() !== 'No-show') b.remove(); });
+  root.querySelectorAll('[data-act="saveReservationDetail"]').forEach(el => el.remove());
   root.querySelectorAll('[data-act="saveReservationDetail"]').forEach(el => el.remove());
   // 預定狀態列：橫列並移除自訂輸入框（Other 的文字框）
   const nsBtn = [...root.querySelectorAll('button')].find(b => (b.textContent || '').trim() === 'No-show');
@@ -1995,6 +1997,7 @@ function crmCleanOpenDetails(el){
 }
 // ===== 預定狀態：點按鍵直接儲存（第二十八步）=====
 async function chooseStatus(v){
+  if (v === 'No-show') return toggleNoShow();
   const r = window.currentDetailReservation;
   if (!r || !r.id) { uiAlert('找不到此預約'); return; }
   const id = r.id;
@@ -2038,3 +2041,27 @@ document.addEventListener('change', async e => {
     await refreshAfterStatus();
   } catch (err) { uiAlert(err.message); }
 });
+// ===== 預定狀態只保留 No-show：點一次設為 No-show，再點一次回到點擊前狀態 =====
+window.noShowPrev = window.noShowPrev || {};
+async function toggleNoShow(){
+  const r = window.currentDetailReservation;
+  if (!r || !r.id) { uiAlert('找不到此預約'); return; }
+  if (isCancelledReservation(r)) { uiAlert('已取消的預約不可變更預定狀態'); return; }
+  const id = r.id;
+  const cur = r.statusLabel || '';
+  let body;
+  if (cur === 'No-show') {
+    const prev = window.noShowPrev[id] || { label: '', other: '' };
+    body = { statusLabel: prev.label, otherStatus: prev.other || '' };
+    delete window.noShowPrev[id];
+  } else {
+    window.noShowPrev[id] = { label: cur, other: r.otherStatus || '' };
+    body = { statusLabel: 'No-show', otherStatus: '' };
+  }
+  try {
+    await api('/api/admin/reservations/' + id + '/status', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    await refreshAfterStatus();
+  } catch (e) { uiAlert(e.message); }
+}

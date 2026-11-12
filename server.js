@@ -153,7 +153,7 @@ async function saveReservationMetaToSupabase(reservations, previousValue = null)
   for (const item of (Array.isArray(reservations) ? reservations : [])) {
     const meta = {};
     if (item.myNote) meta.myNote = item.myNote;
-    if (item.statusLabel) meta.statusLabel = item.statusLabel;
+    if (item.statusLabel !== undefined) meta.statusLabel = item.statusLabel;
     if (item.otherStatus) meta.otherStatus = item.otherStatus;
     if (Array.isArray(item.tags) && item.tags.length) meta.tags = item.tags;
     if (Object.keys(meta).length) value[item.id] = meta;
@@ -373,7 +373,7 @@ function buildReservationMeta(reservations, previousValue) {
   for (const item of reservations) {
     const meta = {};
     if (item.myNote) meta.myNote = item.myNote;
-    if (item.statusLabel) meta.statusLabel = item.statusLabel;
+    if (item.statusLabel !== undefined) meta.statusLabel = item.statusLabel;
     if (item.otherStatus) meta.otherStatus = item.otherStatus;
     if (Array.isArray(item.tags) && item.tags.length) meta.tags = item.tags;
     if (Object.keys(meta).length) value[item.id] = meta;
@@ -1879,7 +1879,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'PATCH' && statusMatch) {
         const id=decodeURIComponent(statusMatch[1]); const data=await readBody(req);
         const allowed=['Finished','Cancel','No-show','Other'];
-        if(!allowed.includes(data.statusLabel)) return json(res,400,{error:'預定狀態無效'});
+        if(!allowed.includes(data.statusLabel) && data.statusLabel!=='') return json(res,400,{error:'預定狀態無效'});
         if(data.statusLabel==='Other' && !String(data.otherStatus||'').trim()) return json(res,400,{error:'請輸入 Other 的自定義狀態'});
         const reservations=readJson(RESERVATIONS_FILE,[]); const item=reservations.find(x=>x.id===id);
         if(!item) return json(res,404,{error:'找不到預約'});
