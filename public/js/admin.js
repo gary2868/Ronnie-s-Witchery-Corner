@@ -1622,6 +1622,7 @@ const ACTIONS = {
   deleteCustomerHistory: (el, ...a) => deleteCustomerHistory(...a),
   deleteClosure: (el, ...a) => deleteClosure(...a),
   removeNewServiceRow: (el) => removeNewServiceRow(el),
+  crmNoteToggle: (el, id) => crmNoteToggle(id),
   openClosureSettings: (el, id) => openClosureSettings(id),
   openCustomerDetail: (el, id) => openCustomerDetail(id),
   crmBack: () => crmBack(),
@@ -1861,12 +1862,12 @@ function renderCustomerDetail(){
         (open ? '<div class="crmResOpen">' + crmCardClean(r) + '</div>' : '');
     }).join('') : '<div class="crmEmpty">沒有符合的預約</div>';
   } else {
-    body = '<div class="crmCard"><h3>標籤</h3>' + (Array.isArray(c.tags) && c.tags.length ? crmTags(c) : '尚無標籤') +
+    body = crmNoteBlock(c) + '<div class="crmCard"><h3>標籤</h3>' + (Array.isArray(c.tags) && c.tags.length ? crmTags(c) : '尚無標籤') +
       '<div class="crmTagAdd"><input id="ct-' + esc(c.id) + '" placeholder="新增標籤">' +
       '<button class="secondary" data-act="addCustomerTag" data-args="' + esc(JSON.stringify([encodeURIComponent(c.id)])) + '">新增標籤</button></div></div>' +
       '<h3 style="margin-top:14px">每次預約的備註</h3>' +
       (list.length ? list.map(r => '<div class="crmCard"><b>' + esc(String(r.date)) + ' ' + esc(r.serviceName || '') + '</b>' +
-        '<br>客人的備註：' + esc(r.note || '—') + '<br>我的備註：' + esc(r.myNote || '—') + '</div>').join('') : '尚無預約');
+        '<br>客人的備註：' + esc(r.note || '—') + '</div>').join('') : '尚無預約');
   }
   $('customerContent').innerHTML = head + tabs + body;
 }
@@ -1900,6 +1901,11 @@ function crmCardClean(r){
     while (row && row !== wrap && row.textContent.trim().length > 120) row = row.parentElement;
     (row && row !== wrap ? row : inp).remove();
   });
+  wrap.querySelectorAll('textarea').forEach(ta => {
+    let row = ta.parentElement;
+    while (row && row !== wrap && !(row.textContent || '').includes('我的備註')) row = row.parentElement;
+    if (row && row !== wrap && row.textContent.trim().length <= 160) row.remove(); else ta.remove();
+  });
   return wrap.innerHTML;
 }
 // ===== 部分公休顯示在當日列表（最後一筆預約下方）=====
@@ -1930,4 +1936,26 @@ async function openClosureSettings(id){
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setTimeout(() => { el.style.outline = ''; }, 2500);
   }
+}
+// ===== 我的備註（客戶層級）=====
+function crmNoteBlock(c){
+  const editing = crmView.noteEditing === c.id;
+  return '<div class="crmCard"><h3>我的備註</h3>' +
+    '<textarea id="crmStaffNote" class="crmNote"' + (editing ? '' : ' readonly') + '>' + esc(c.staffNote || '') + '</textarea>' +
+    '<div class="crmNoteActions"><button data-act="crmNoteToggle" data-args="' + esc(JSON.stringify([encodeURIComponent(c.id)])) + '">' + (editing ? '完成儲存' : '修改') + '</button></div></div>';
+}
+async function crmNoteToggle(encId){
+  const id = decodeURIComponent(encId || '');
+  const c = (customers || []).find(x => x.id === id); if (!c) return;
+  if (crmView.noteEditing !== id) {
+    crmView.noteEditing = id; renderCustomers();
+    const ta = document.getElementById('crmStaffNote'); if (ta) ta.focus();
+    return;
+  }
+  const v = (document.getElementById('crmStaffNote') || {}).value || '';
+  const r = await fetch('/api/admin/customers/' + encodeURIComponent(id), {
+    method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staffNote: v })
+  });
+  if (!r.ok) { alert('儲存失敗（' + r.status + '）'); return; }
+  c.staffNote = v; crmView.noteEditing = null; renderCustomers();
 }
