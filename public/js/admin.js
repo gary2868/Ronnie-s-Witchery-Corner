@@ -167,6 +167,7 @@ async function importDataFromFile(file) {
 }
 
 function showTab(name) {
+  if (name === 'customer') crmView = { mode: 'list', id: null, tab: 'overview', filter: 'all', openRes: null };
   if (name === 'reservation') name = 'calendar'; // 合併行事曆（單一分頁）
   ['calendar','reservation','customer','closure','service','recycle'].forEach(x => {
     $(x + 'View').classList.toggle('hidden', x !== name);
@@ -1789,14 +1790,14 @@ function renderCustomers(){
   const rows = crmFilterCustomers().map(c => ({ c, s: crmStats(c) }));
   $('customerContent').innerHTML =
     '<div class="crmSummary"><div><span>總客戶</span><b>' + all.length + '</b></div><div><span>未來預約</span><b>' + withFuture + '</b></div></div>' +
-    '<div class="crmTable"><div class="crmHead"><span>客戶</span><span>電話</span><span>最近到訪</span><span>下一次預約</span><span>累計完成</span></div>' +
+    '<div class="crmTable"><div class="crmHead"><span>客戶</span><span>電話</span><span>最近到訪</span><span>下一次預約</span></div>' +
     (rows.length ? rows.map(({ c, s }) =>
       '<div class="crmRow" data-act="openCustomerDetail" data-args="' + esc(JSON.stringify([encodeURIComponent(c.id)])) + '">' +
         '<span class="crmName"><b>' + esc(c.name || '') + '</b>' + crmTags(c) + '</span>' +
         '<span>' + esc(c.phone || '—') + '</span>' +
         '<span>' + esc(s.lastVisit || '—') + '</span>' +
         '<span>' + esc(s.nextFuture || '無') + '</span>' +
-        '<span>' + s.done + '</span>' +
+        
       '</div>').join('') : '<div class="crmEmpty">沒有符合的客戶</div>') +
     '</div>';
 }
@@ -1849,10 +1850,10 @@ function renderCustomerDetail(){
       '<div class="crmCard"><h3>下一次預約</h3>' + (next ? esc(next.date) + ' ' + esc(crmHm(next.startTime)) + '–' + esc(crmHm(next.endTime)) + ' · ' + esc(next.serviceName || '') + ' · ' + esc(next.durationMinutes || '') + ' 分鐘' : '無') + '</div>' +
       '</div>';
   } else if (crmView.tab === 'list') {
-    const filters = [['all', '全部'], ['future', '未來預約'], ['done', '已完成'], ['cancelled', '已取消'], ['noshow', '未到場']];
+    const filters = [['all', '全部'], ['future', '未來預約'], ['done', '已完成'], ['cancelled', '已取消']];
     body = '<div class="crmTabs">' + filters.map(([k, n]) =>
       '<button class="' + (crmView.filter === k ? '' : 'secondary') + '" data-act="crmSetFilter" data-args="' + esc(JSON.stringify([k])) + '">' + n + '</button>').join('') + '</div>';
-    const items = list.filter(r => crmMatchFilter(r, crmView.filter));
+    const items = list.filter(r => crmMatchFilterV2(r, crmView.filter));
     body += items.length ? items.map(r => {
       const open = crmView.openRes === r.id;
       return '<div class="crmResRow" data-act="crmToggleRes" data-args="' + esc(JSON.stringify([encodeURIComponent(r.id)])) + '">' +
@@ -2064,4 +2065,18 @@ async function toggleNoShow(){
     });
     await refreshAfterStatus();
   } catch (e) { uiAlert(e.message); }
+}
+// ===== 預約紀錄篩選（時間判斷）=====
+function crmNowKey(){
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+}
+function crmMatchFilterV2(r, f){
+  const now = crmNowKey();
+  const endKey = String(r.date) + ' ' + crmHm(r.endTime);
+  const startKey = String(r.date) + ' ' + crmHm(r.startTime);
+  const cancelled = r.status === 'CANCELLED';
+  if (f === 'future') return !cancelled && r.status === 'CONFIRMED' && startKey > now;
+  if (f === 'done') return !cancelled && endKey <= now;
+  if (f === 'cancelled') return cancelled;
+  return true;
 }
