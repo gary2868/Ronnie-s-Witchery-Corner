@@ -584,7 +584,7 @@ async function loadAdmin() {
         renderAccordion('cancelled', 'Cancelled', cancelled, cardsHtml);
     } else {
       // 已選擇日期：維持單一清單（三區順序不變）
-      $('adminContent').innerHTML = dayRowsHtml(list);
+      $('adminContent').innerHTML = dayRowsHtml(list) + (date ? closureRowsHtml(await loadPartialClosures(date)) : '');
     }
 
   } catch (e) {
@@ -1055,7 +1055,7 @@ function taipeiTodayISO() {
 window.__closureAccordionOpen = window.__closureAccordionOpen || { expired: false };
 function renderClosureCard(x) {
   return `
-    <div class="booking">
+    <div class="booking" id="closure-${esc(x.id)}">
       <div>
         <b>${esc(x.date)}</b><br>
         ${x.startTime ? `${esc(x.startTime)}–${esc(x.endTime)} 不可預約` : '全天公休'}
@@ -1622,6 +1622,7 @@ const ACTIONS = {
   deleteCustomerHistory: (el, ...a) => deleteCustomerHistory(...a),
   deleteClosure: (el, ...a) => deleteClosure(...a),
   removeNewServiceRow: (el) => removeNewServiceRow(el),
+  openClosureSettings: (el, id) => openClosureSettings(id),
   openCustomerDetail: (el, id) => openCustomerDetail(id),
   crmBack: () => crmBack(),
   crmSetTab: (el, t) => crmSetTab(t),
@@ -1900,4 +1901,33 @@ function crmCardClean(r){
     (row && row !== wrap ? row : inp).remove();
   });
   return wrap.innerHTML;
+}
+// ===== 部分公休顯示在當日列表（最後一筆預約下方）=====
+async function loadPartialClosures(date){
+  try {
+    const all = await api('/api/admin/closures');
+    return (all || []).filter(x => x.date === date && x.startTime);
+  } catch (e) { return []; }
+}
+function closureRowsHtml(arr){
+  if (!arr || !arr.length) return '';
+  return '<div class="dayRows">' + arr.map(x =>
+    '<div class="dayRow dayClosure" data-act="openClosureSettings" data-args="' + esc(JSON.stringify([encodeURIComponent(x.id)])) + '">' +
+      '<span class="dayTime">' + esc(String(x.startTime || '').slice(0, 5)) + '–' + esc(String(x.endTime || '').slice(0, 5)) + '</span>' +
+      '<span class="dayName">部分公休</span>' +
+      '<span class="dayService">不可預約</span>' +
+      '<span class="dayDur"></span>' +
+      '<span class="dayStatus">公休</span>' +
+    '</div>').join('') + '</div>';
+}
+async function openClosureSettings(id){
+  const cid = decodeURIComponent(id || '');
+  showTab('closure');
+  await loadClosures();
+  const el = document.getElementById('closure-' + cid);
+  if (el) {
+    el.style.outline = '2px solid var(--violet)';
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => { el.style.outline = ''; }, 2500);
+  }
 }
