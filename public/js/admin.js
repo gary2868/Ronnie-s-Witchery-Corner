@@ -169,7 +169,7 @@ async function importDataFromFile(file) {
 function showTab(name) {
   if (name === 'customer') crmView = { mode: 'list', id: null, tab: 'overview', filter: 'all', openRes: null };
   if (name === 'reservation') name = 'calendar'; // 合併行事曆（單一分頁）
-  ['calendar','reservation','customer','closure','service','recycle'].forEach(x => {
+  ['calendar','reservation','customer','closure','service','recycle','backup'].forEach(x => {
     $(x + 'View').classList.toggle('hidden', x !== name);
   });
 
@@ -186,6 +186,7 @@ function showTab(name) {
   $('tabServices').classList.toggle('secondary', name !== 'service');
   $('tabRecycle').classList.toggle('active', name === 'recycle');
   $('tabRecycle').classList.toggle('secondary', name !== 'recycle');
+  if ($('tabBackup')) { $('tabBackup').classList.toggle('active', name === 'backup'); $('tabBackup').classList.toggle('secondary', name !== 'backup'); }
   if (name === 'calendar') $('reservationView').classList.remove('hidden'); // 合併行事曆（單一分頁）：右側當日區一併顯示
 }
 
@@ -1631,6 +1632,7 @@ const ACTIONS = {
   crmSetFilter: (el, f) => crmSetFilter(f),
   crmToggleRes: (el, id) => crmToggleRes(id),
   crmNewReservation: () => crmNewReservation(),
+  crmDeleteRes: (el, id) => crmDeleteRes(id),
   showHistoryDetail: (el, rid, date) => showHistoryDetail(el, rid, date),
   openCrmForCustomer: (el, cid, phone) => openCrmForCustomer(cid, phone),
   moveServiceUp: (el) => moveServiceRow(el, -1),
@@ -1860,7 +1862,7 @@ function renderCustomerDetail(){
         '<span>' + esc(String(r.date)) + ' ' + esc(crmHm(r.startTime)) + '–' + esc(crmHm(r.endTime)) + '</span>' +
         '<span>' + esc(r.serviceName || '') + '</span><span>' + esc(r.durationMinutes || '') + ' 分鐘</span>' +
         '<span class="crmStatus">' + esc(crmStatusText(r)) + '</span></div>' +
-        (open ? '<div class="crmResOpen">' + crmCardStrict(r) + '</div>' : '');
+        (open ? crmDetailOnly(r) : '');
     }).join('') : '<div class="crmEmpty">沒有符合的預約</div>';
   } else {
     body = crmNoteBlock(c) + '<div class="crmCard"><h3>標籤</h3>' + (Array.isArray(c.tags) && c.tags.length ? crmTags(c) : '尚無標籤') +
@@ -1871,6 +1873,7 @@ function renderCustomerDetail(){
         '<br>客人的備註：' + esc(r.note || '—') + '</div>').join('') : '尚無預約');
   }
   $('customerContent').innerHTML = head + tabs + body;
+  if (crmView.openRes) crmLoadOpenDetail(encodeURIComponent(crmView.openRes));
 }
 // ---- 載入 ----
 async function loadCustomers(){
@@ -1974,6 +1977,9 @@ function crmCleanRoot(root){
   kill.forEach(el => { if (el.isConnected) el.remove(); });
   root.querySelectorAll('button').forEach(b => { if ((b.textContent || '').trim() === 'Other') b.remove(); });
   root.querySelectorAll('input[placeholder="新增標籤"], textarea').forEach(el => el.remove());
+  root.querySelectorAll('button.statusChoice, #otherStatusInput, [data-act="saveReservationDetail"]').forEach(el => el.remove());
+  root.querySelectorAll('*').forEach(el => { if (el.children.length === 0 && (el.textContent || '').trim() === '預定狀態') el.remove(); });
+  root.querySelectorAll('.detail button').forEach(b => { const t = (b.textContent || '').trim(); if (t === '關閉' || t === '刪除') b.remove(); });
   root.querySelectorAll('button.statusChoice').forEach(b => { if (b.textContent.trim() !== 'No-show') b.remove(); });
   root.querySelectorAll('[data-act="saveReservationDetail"]').forEach(el => el.remove());
   root.querySelectorAll('[data-act="saveReservationDetail"]').forEach(el => el.remove());
@@ -2080,3 +2086,39 @@ function crmMatchFilterV2(r, f){
   if (f === 'cancelled') return cancelled;
   return true;
 }
+// ===== A) 預約紀錄：點列直接展開詳細資訊 =====
+function crmDetailOnly(r){
+  const enc = encodeURIComponent(r.id);
+  return '<div class="crmResOpen" data-rid="' + esc(r.id) + '">' +
+    '<div id="detail-' + enc + '" class="crmDetailBox"></div>' +
+    '<div class="crmDetailBar">' +
+      '<button class="danger" data-act="crmDeleteRes" data-args="' + esc(JSON.stringify([enc])) + '">刪除</button>' +
+      '<button class="secondary" data-act="crmToggleRes" data-args="' + esc(JSON.stringify([enc])) + '">關閉</button>' +
+    '</div></div>';
+}
+async function crmLoadOpenDetail(encId){
+  const box = $('detail-' + encId);
+  if (!box || box.innerHTML.trim()) return;
+  await showDetail(encId);
+  const b2 = $('detail-' + encId);
+  if (b2) crmCleanOpenDetails(b2);
+}
+async function crmDeleteRes(encId){
+  await deleteReservation(encId);
+  await loadCustomers();
+}
+// ===== C) 備份設定分頁：搬移既有按鍵（保留事件綁定），順序：匯出、匯入、備份到 Google Drive =====
+(function setupBackupView(){
+  const rv = document.getElementById('recycleView');
+  const panel = rv && rv.parentElement;
+  if (!panel || document.getElementById('backupView')) return;
+  const view = document.createElement('div');
+  view.id = 'backupView'; view.className = 'hidden';
+  view.innerHTML = '<div class="glass"><h2>備份設定</h2><div class="hint">匯出、匯入後台資料，或備份到 Google Drive。</div><div class="backupBtns" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"></div></div>';
+  const row = view.querySelector('.backupBtns');
+  ['exportData', 'importData', 'backupDrive'].forEach(id => { const b = document.getElementById(id); if (b) row.appendChild(b); });
+  const fi = document.getElementById('importFile'); if (fi) row.appendChild(fi);
+  panel.appendChild(view);
+  const nav = document.getElementById('tabBackup');
+  if (nav) nav.addEventListener('click', () => showTab('backup'));
+})();
