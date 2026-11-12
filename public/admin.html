@@ -258,6 +258,11 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 .crmResOpen{margin:-2px 0 10px 0}
 @media(max-width:800px){.crmHead{display:none}.crmRow{grid-template-columns:1fr 1fr}.crmGrid{grid-template-columns:1fr}.crmKpis{flex-wrap:wrap}.crmResRow{grid-template-columns:1fr 1fr}}
 </style>
+<style>
+.crmNote{width:100%;min-height:90px;border:1px solid #e3d9ee;border-radius:12px;padding:10px;box-sizing:border-box;font:inherit;background:#fff}
+.crmNote[readonly]{background:#faf7fd;color:var(--ink)}
+.crmNoteActions{display:flex;justify-content:flex-end;margin-top:8px}
+</style>
 </head>
 <body>
 <div id="importConfirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="importConfirmText">

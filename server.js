@@ -1810,6 +1810,18 @@ const server = http.createServer(async (req, res) => {
         await flushStorage();
         return json(res, 201, { customer });
       }
+      const adminCustPatch = u.pathname.match(/^\/api\/admin\/customers\/([^/]+)$/);
+      if (req.method === 'PATCH' && adminCustPatch) {
+        const data = await readBody(req);
+        const id = decodeURIComponent(adminCustPatch[1]);
+        const customers = readJson(CUSTOMERS_FILE, []);
+        const c = customers.find(x => x.id === id);
+        if (!c) return json(res, 404, { error: '找不到此客人' });
+        if (typeof data.staffNote === 'string') { c.staffNote = data.staffNote.slice(0, 2000); c.updatedAt = new Date().toISOString(); }
+        atomicWrite(CUSTOMERS_FILE, customers);
+        await flushStorage();
+        return json(res, 200, { customer: c });
+      }
       const adminHistDel = u.pathname.match(/^\/api\/admin\/customers\/([^/]+)\/history\/([^/]+)$/);
       if (req.method === 'DELETE' && adminHistDel) {
         // 從客人檔案刪除某筆歷史 = 刪除對應的預約（雙向同步只有這一條邏輯路徑）
