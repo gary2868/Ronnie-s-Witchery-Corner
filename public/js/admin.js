@@ -1650,7 +1650,7 @@ document.addEventListener('toggle', e => {
   if (tag === 'closureExpired') window.__closureAccordionOpen.expired = el.open;
 }, true);
 
-loadCalendar().then(() => {
+if (!$('adminPanel').classList.contains('hidden')) loadCalendar().then(() => {
   if (!$('adminPanel').classList.contains('hidden')) {
     showTab('calendar');
   }
