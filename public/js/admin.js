@@ -865,7 +865,7 @@ async function cancelBooking(id) {
   }
 }
 
-async function loadCustomers() {
+async function loadCustomersLegacy() {
   try {
     customers = await api('/api/admin/customers');
     renderCustomers();
@@ -878,7 +878,7 @@ function toggleCustHistory(btn) {
   const box = btn.closest('.customer').querySelector('.custHistory');
   box.classList.toggle('hidden');
 }
-function renderCustomers() {
+function renderCustomersLegacy() {
   const q = $('customerSearch').value.trim().toLowerCase();
 
   const list = filterCustomersByPhone().filter(c =>
@@ -1622,6 +1622,12 @@ const ACTIONS = {
   deleteCustomerHistory: (el, ...a) => deleteCustomerHistory(...a),
   deleteClosure: (el, ...a) => deleteClosure(...a),
   removeNewServiceRow: (el) => removeNewServiceRow(el),
+  openCustomerDetail: (el, id) => openCustomerDetail(id),
+  crmBack: () => crmBack(),
+  crmSetTab: (el, t) => crmSetTab(t),
+  crmSetFilter: (el, f) => crmSetFilter(f),
+  crmToggleRes: (el, id) => crmToggleRes(id),
+  crmNewReservation: () => crmNewReservation(),
   showHistoryDetail: (el, rid, date) => showHistoryDetail(el, rid, date),
   openCrmForCustomer: (el, cid, phone) => openCrmForCustomer(cid, phone),
   moveServiceUp: (el) => moveServiceRow(el, -1),
@@ -1712,7 +1718,7 @@ function dayRowsHtml(arr){
       '</div>';
   }).join('') + '</div>';
 }
-async function openCrmForCustomer(cid, phone){
+async function openCrmForCustomerLegacy(cid, phone){
   const id = decodeURIComponent(cid || '');
   showTab('customer');
   await loadCustomers();
@@ -1735,4 +1741,152 @@ async function showHistoryDetail(el, rid, date){
   const box = document.createElement('div'); box.className = 'histDetail';
   box.innerHTML = r ? renderBookingCard(r) : '找不到此預約的詳細資料。';
   item.appendChild(box);
+}
+// ===== 客戶 CRM 新版（名冊＋詳細檔案）=====
+let crmRes = [];
+let crmView = { mode: 'list', id: null, tab: 'overview', filter: 'all', openRes: null };
+function crmToday(){ return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei' }).format(new Date()); }
+function crmDigits(s){ return String(s || '').replace(/\D/g, ''); }
+function crmResFor(c){
+  const cd = crmDigits(c.phone);
+  return crmRes.filter(r => { const k = r.customerId || r.customer_id; return k ? k === c.id : (cd && crmDigits(r.phone) === cd); });
+}
+function crmStats(c){
+  const list = crmResFor(c), today = crmToday();
+  const done = list.filter(r => r.status !== 'CANCELLED' && r.statusLabel === 'Finished');
+  const pastDone = done.map(r => String(r.date)).filter(d => d < today).sort();
+  const future = list.filter(r => r.status === 'CONFIRMED' && String(r.date) > today).map(r => String(r.date)).sort();
+  const all = list.map(r => String(r.date)).sort();
+  return {
+    done: done.length,
+    lastVisit: pastDone.length ? pastDone[pastDone.length - 1] : '',
+    futureCount: future.length,
+    nextFuture: future.length ? future[0] : '',
+    first: all.length ? all[0] : '',
+    lineBound: list.some(r => r.lineBound),
+  };
+}
+function crmSortDesc(list){
+  return list.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.startTime).localeCompare(String(a.startTime)));
+}
+function crmHm(s){ return String(s || '').slice(0, 5); }
+function crmFilterCustomers(){
+  const q = String(($('customerSearch') && $('customerSearch').value) || '').trim().toLowerCase();
+  const qd = crmDigits(q);
+  return (customers || []).filter(c => !q ||
+    String(c.name || '').toLowerCase().includes(q) ||
+    (qd && crmDigits(c.phone).includes(qd)) ||
+    (Array.isArray(c.tags) && c.tags.some(t => String(t).toLowerCase().includes(q))));
+}
+function crmTags(c){ return (Array.isArray(c.tags) ? c.tags : []).map(t => '<em class="crmTag">' + esc(t) + '</em>').join(''); }
+// ---- 名冊 ----
+function renderCustomers(){
+  if (crmView.mode === 'detail') return renderCustomerDetail();
+  const all = customers || [];
+  const withFuture = all.filter(c => crmStats(c).futureCount > 0).length;
+  const rows = crmFilterCustomers().map(c => ({ c, s: crmStats(c) }));
+  $('customerContent').innerHTML =
+    '<div class="crmSummary"><div><span>總客戶</span><b>' + all.length + '</b></div><div><span>有未來預約</span><b>' + withFuture + '</b></div></div>' +
+    '<div class="crmTable"><div class="crmHead"><span>客戶</span><span>電話</span><span>最近到訪</span><span>下一次預約</span><span>累計完成</span></div>' +
+    (rows.length ? rows.map(({ c, s }) =>
+      '<div class="crmRow" data-act="openCustomerDetail" data-args="' + esc(JSON.stringify([encodeURIComponent(c.id)])) + '">' +
+        '<span class="crmName"><b>' + esc(c.name || '') + '</b>' + crmTags(c) + '</span>' +
+        '<span>' + esc(c.phone || '—') + '</span>' +
+        '<span>' + esc(s.lastVisit || '—') + '</span>' +
+        '<span>' + esc(s.nextFuture || '無') + '</span>' +
+        '<span>' + s.done + '</span>' +
+      '</div>').join('') : '<div class="crmEmpty">沒有符合的客戶</div>') +
+    '</div>';
+}
+// ---- 詳細檔案 ----
+function openCustomerDetail(encId){
+  crmView = { mode: 'detail', id: decodeURIComponent(encId || ''), tab: 'overview', filter: 'all', openRes: null };
+  renderCustomers();
+}
+function crmBack(){ crmView = { mode: 'list', id: null, tab: 'overview', filter: 'all', openRes: null }; renderCustomers(); }
+function crmSetTab(t){ crmView.tab = t; renderCustomers(); }
+function crmSetFilter(f){ crmView.filter = f; renderCustomers(); }
+function crmToggleRes(id){ const v = decodeURIComponent(id || ''); crmView.openRes = crmView.openRes === v ? null : v; renderCustomers(); }
+function crmNewReservation(){ showTab('calendar'); const b = $('addReservationBtn'); if (b) b.click(); }
+function crmMatchFilter(r, f){
+  const today = crmToday();
+  if (f === 'future') return r.status === 'CONFIRMED' && String(r.date) > today;
+  if (f === 'done') return r.status !== 'CANCELLED' && r.statusLabel === 'Finished';
+  if (f === 'cancelled') return r.status === 'CANCELLED';
+  if (f === 'noshow') return r.statusLabel === 'No-show';
+  return true;
+}
+function crmStatusText(r){
+  if (r.status === 'CANCELLED') return '已取消';
+  return r.statusLabel ? (r.statusLabel === 'Other' && r.otherStatus ? r.otherStatus : r.statusLabel) : '已確認';
+}
+function renderCustomerDetail(){
+  const c = (customers || []).find(x => x.id === crmView.id);
+  if (!c) { crmBack(); return; }
+  const s = crmStats(c);
+  const list = crmSortDesc(crmResFor(c));
+  const head =
+    '<div class="crmDetailHead"><button class="secondary" data-act="crmBack">← 返回名冊</button>' +
+    '<div class="crmTitle"><h2>' + esc(c.name || '') + '</h2>' +
+    '<div class="crmMeta">' + esc(c.phone || '—') + ' · ' + (s.lineBound ? 'LINE 已綁定' : 'LINE 未綁定') + '</div>' +
+    '<div>' + crmTags(c) + '</div></div>' +
+    '<button data-act="crmNewReservation">＋ 新增預約</button></div>' +
+    '<div class="crmKpis"><div><span>完成服務</span><b>' + s.done + '</b> 次</div>' +
+    '<div><span>最近到訪</span><b>' + esc(s.lastVisit || '—') + '</b></div>' +
+    '<div><span>未來預約</span><b>' + s.futureCount + '</b> 筆</div></div>';
+  const tabNames = [['overview', '總覽'], ['list', '預約紀錄'], ['notes', '客戶備註']];
+  const tabs = '<div class="crmTabs">' + tabNames.map(([k, n]) =>
+    '<button class="' + (crmView.tab === k ? '' : 'secondary') + '" data-act="crmSetTab" data-args="' + esc(JSON.stringify([k])) + '">' + n + '</button>').join('') + '</div>';
+  let body = '';
+  if (crmView.tab === 'overview') {
+    const latest = list[0];
+    const next = list.find(r => r.status === 'CONFIRMED' && String(r.date) > crmToday());
+    body = '<div class="crmGrid">' +
+      '<div class="crmCard"><h3>客戶資料</h3>生日：' + esc(c.birthDate || '—') + '<br>首次預約：' + esc(s.first || '—') + '</div>' +
+      '<div class="crmCard"><h3>最近活動</h3>' + (latest ? esc(latest.date) + ' · ' + esc(latest.serviceName || '') + ' · ' + esc(crmStatusText(latest)) : '尚無預約') + '</div>' +
+      '<div class="crmCard"><h3>下一次預約</h3>' + (next ? esc(next.date) + ' ' + esc(crmHm(next.startTime)) + '–' + esc(crmHm(next.endTime)) + ' · ' + esc(next.serviceName || '') + ' · ' + esc(next.durationMinutes || '') + ' 分鐘' : '無') + '</div>' +
+      '</div>';
+  } else if (crmView.tab === 'list') {
+    const filters = [['all', '全部'], ['future', '未來預約'], ['done', '已完成'], ['cancelled', '已取消'], ['noshow', '未到場']];
+    body = '<div class="crmTabs">' + filters.map(([k, n]) =>
+      '<button class="' + (crmView.filter === k ? '' : 'secondary') + '" data-act="crmSetFilter" data-args="' + esc(JSON.stringify([k])) + '">' + n + '</button>').join('') + '</div>';
+    const items = list.filter(r => crmMatchFilter(r, crmView.filter));
+    body += items.length ? items.map(r => {
+      const open = crmView.openRes === r.id;
+      return '<div class="crmResRow" data-act="crmToggleRes" data-args="' + esc(JSON.stringify([encodeURIComponent(r.id)])) + '">' +
+        '<span>' + esc(String(r.date)) + ' ' + esc(crmHm(r.startTime)) + '–' + esc(crmHm(r.endTime)) + '</span>' +
+        '<span>' + esc(r.serviceName || '') + '</span><span>' + esc(r.durationMinutes || '') + ' 分鐘</span>' +
+        '<span class="crmStatus">' + esc(crmStatusText(r)) + '</span></div>' +
+        (open ? '<div class="crmResOpen">' + renderBookingCard(r) + '</div>' : '');
+    }).join('') : '<div class="crmEmpty">沒有符合的預約</div>';
+  } else {
+    body = '<div class="crmCard"><h3>標籤</h3>' + (Array.isArray(c.tags) && c.tags.length ? crmTags(c) : '尚無標籤') +
+      '<div class="crmTagAdd"><input id="ct-' + esc(c.id) + '" placeholder="新增標籤">' +
+      '<button class="secondary" data-act="addCustomerTag" data-args="' + esc(JSON.stringify([encodeURIComponent(c.id)])) + '">新增標籤</button></div></div>' +
+      '<h3 style="margin-top:14px">每次預約的備註</h3>' +
+      (list.length ? list.map(r => '<div class="crmCard"><b>' + esc(String(r.date)) + ' ' + esc(r.serviceName || '') + '</b>' +
+        '<br>客人的備註：' + esc(r.note || '—') + '<br>我的備註：' + esc(r.myNote || '—') + '</div>').join('') : '尚無預約');
+  }
+  $('customerContent').innerHTML = head + tabs + body;
+}
+// ---- 載入 ----
+async function loadCustomers(){
+  try {
+    const [cust, res] = await Promise.all([api('/api/admin/customers'), api('/api/admin/reservations')]);
+    customers = cust;
+    crmRes = Array.isArray(res) ? res : (res.reservations || []);
+    renderCustomers();
+  } catch (e) {
+    if (e.message === '未登入') showLogin();
+  }
+}
+// 點當日列表的客戶：找到客戶後直接開啟詳細檔案
+async function openCrmForCustomer(cid, phone){
+  const id = decodeURIComponent(cid || '');
+  showTab('customer');
+  await loadCustomers();
+  const c = (customers || []).find(x => x.id === id) ||
+    (customers || []).find(x => crmDigits(x.phone) && crmDigits(x.phone) === crmDigits(phone));
+  if (!c) { alert('找不到此客戶的檔案'); return; }
+  openCustomerDetail(encodeURIComponent(c.id));
 }
