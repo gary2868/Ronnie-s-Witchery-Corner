@@ -1843,7 +1843,7 @@ function renderCustomerDetail(){
   if (crmView.tab === 'overview') {
     const latest = list[0];
     const next = list.find(r => r.status === 'CONFIRMED' && String(r.date) > crmToday());
-    body = '<div class="crmGrid">' +
+    body = '<div class="crmGrid">' + '<div class="crmCard"><h3>我的備註</h3>' + (c.staffNote ? esc(c.staffNote) : '<span class="crmMuted">尚未填寫（總覽：我的備註）</span>') + '</div>' +
       '<div class="crmCard"><h3>客戶資料</h3>生日：' + esc(c.birthDate || '—') + '<br>首次預約：' + esc(s.first || '—') + '</div>' +
       '<div class="crmCard"><h3>最近活動</h3>' + (latest ? esc(latest.date) + ' · ' + esc(latest.serviceName || '') + ' · ' + esc(crmStatusText(latest)) : '尚無預約') + '</div>' +
       '<div class="crmCard"><h3>下一次預約</h3>' + (next ? esc(next.date) + ' ' + esc(crmHm(next.startTime)) + '–' + esc(crmHm(next.endTime)) + ' · ' + esc(next.serviceName || '') + ' · ' + esc(next.durationMinutes || '') + ' 分鐘' : '無') + '</div>' +
@@ -1906,6 +1906,7 @@ function crmCardClean(r){
     while (row && row !== wrap && !(row.textContent || '').includes('我的備註')) row = row.parentElement;
     if (row && row !== wrap && row.textContent.trim().length <= 160) row.remove(); else ta.remove();
   });
+  wrap.querySelectorAll('button').forEach(b => { if ((b.textContent || '').trim() === 'Other') b.remove(); });
   return wrap.innerHTML;
 }
 // ===== 部分公休顯示在當日列表（最後一筆預約下方）=====
