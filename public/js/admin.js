@@ -1973,6 +1973,14 @@ function crmCleanRoot(root){
   kill.forEach(el => { if (el.isConnected) el.remove(); });
   root.querySelectorAll('button').forEach(b => { if ((b.textContent || '').trim() === 'Other') b.remove(); });
   root.querySelectorAll('input[placeholder="新增標籤"], textarea').forEach(el => el.remove());
+  // 預定狀態列：橫列並移除自訂輸入框（Other 的文字框）
+  const nsBtn = [...root.querySelectorAll('button')].find(b => (b.textContent || '').trim() === 'No-show');
+  if (nsBtn && nsBtn.parentElement) {
+    const row = nsBtn.parentElement;
+    row.querySelectorAll('input').forEach(i => i.remove());
+    row.style.display = 'flex'; row.style.flexDirection = 'row'; row.style.flexWrap = 'wrap';
+    row.style.alignItems = 'center'; row.style.gap = '8px';
+  }
 }
 function crmCardStrict(r){
   const wrap = document.createElement('div');
