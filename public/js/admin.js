@@ -1606,7 +1606,7 @@ $('customerSearch').oninput = renderCustomers;
 
 // ===== CSP 相容事件委派（取代內嵌 on* 屬性）=====
 const ACTIONS = {
-  showDetail: (el, ...a) => showDetail(...a),
+  showDetail: (el, ...a) => { const p = showDetail(...a); if (el && el.closest && el.closest('.crmResOpen')) return Promise.resolve(p).then(() => crmCleanOpenDetails(el)); return p; },
   cancelBooking: (el, ...a) => cancelBooking(...a),
   deleteReservation: (el, ...a) => deleteReservation(...a),
   deleteReservationTag: (el, ...a) => deleteReservationTag(...a),
@@ -1859,7 +1859,7 @@ function renderCustomerDetail(){
         '<span>' + esc(String(r.date)) + ' ' + esc(crmHm(r.startTime)) + '–' + esc(crmHm(r.endTime)) + '</span>' +
         '<span>' + esc(r.serviceName || '') + '</span><span>' + esc(r.durationMinutes || '') + ' 分鐘</span>' +
         '<span class="crmStatus">' + esc(crmStatusText(r)) + '</span></div>' +
-        (open ? '<div class="crmResOpen">' + crmCardClean(r) + '</div>' : '');
+        (open ? '<div class="crmResOpen">' + crmCardStrict(r) + '</div>' : '');
     }).join('') : '<div class="crmEmpty">沒有符合的預約</div>';
   } else {
     body = crmNoteBlock(c) + '<div class="crmCard"><h3>標籤</h3>' + (Array.isArray(c.tags) && c.tags.length ? crmTags(c) : '尚無標籤') +
@@ -1959,4 +1959,28 @@ async function crmNoteToggle(encId){
   });
   if (!r.ok) { alert('儲存失敗（' + r.status + '）'); return; }
   c.staffNote = v; crmView.noteEditing = null; renderCustomers();
+}
+// ===== CRM 展開卡片清理（標籤、我的備註、Other；保護含姓名／客人的備註／預定狀態的容器）=====
+function crmCleanRoot(root){
+  const txt = el => (el.textContent || '').replace(/\s+/g, '');
+  const kill = [];
+  root.querySelectorAll('*').forEach(el => {
+    const t = txt(el);
+    const isField = t.indexOf('標籤') === 0 || t.indexOf('我的備註') === 0;
+    const isContainer = t.indexOf('姓名') >= 0 || t.indexOf('客人的備註') >= 0 || t.indexOf('預定狀態') >= 0;
+    if (t.length > 0 && t.length <= 200 && isField && !isContainer) kill.push(el);
+  });
+  kill.forEach(el => { if (el.isConnected) el.remove(); });
+  root.querySelectorAll('button').forEach(b => { if ((b.textContent || '').trim() === 'Other') b.remove(); });
+  root.querySelectorAll('input[placeholder="新增標籤"], textarea').forEach(el => el.remove());
+}
+function crmCardStrict(r){
+  const wrap = document.createElement('div');
+  wrap.innerHTML = renderBookingCard(r);
+  crmCleanRoot(wrap);
+  return wrap.innerHTML;
+}
+function crmCleanOpenDetails(el){
+  const root = el && el.closest ? el.closest('.crmResOpen') : null;
+  if (root) crmCleanRoot(root);
 }
