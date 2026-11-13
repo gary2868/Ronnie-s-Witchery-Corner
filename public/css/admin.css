@@ -1,0 +1,451 @@
+
+:root{--violet:#8e76b7;--violet-dark:#4d3b67;--cream:#fffaf2;--amber:#c89b50;--ink:#30263a;--muted:#71657d;--line:#e8dfed;--glass:rgba(255,255,255,.86)}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;color:var(--ink);font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;background:linear-gradient(135deg,#f3edf8 0%,#e8def1 48%,#fbf3e7 100%);overflow-x:hidden}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background-image:radial-gradient(circle,rgba(200,155,80,.22) 0 1px,transparent 1.5px);background-size:100px 100px;opacity:.25}
+.wrap{max-width:1180px;margin:auto;padding:28px 18px 70px}
+.glass{background:var(--glass);border:1px solid rgba(255,255,255,.9);backdrop-filter:blur(18px);box-shadow:0 18px 55px rgba(72,50,92,.12);border-radius:24px}
+.panel{padding:25px}
+header{padding:24px 28px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:18px}
+h1{margin:0;font-size:30px;letter-spacing:.08em;color:var(--violet-dark)}
+h2{margin:0 0 14px}
+.magic{color:var(--amber)}
+.sub,.muted{color:var(--muted)}
+button{border:1px solid transparent;border-radius:12px;padding:10px 14px;background:linear-gradient(135deg,#9e87c5,#72588f);color:white;font-weight:700;cursor:pointer;box-shadow:0 8px 22px rgba(72,50,92,.14)}
+button:disabled{opacity:.42;cursor:not-allowed}
+.secondary{background:white;color:var(--violet-dark);border-color:var(--line);box-shadow:none}
+.danger{background:#8d5c6d}
+input,select,textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--ink);outline:none}
+label{display:block;margin:14px 0 7px;color:#5e5268}
+.login{max-width:480px;margin:70px auto}
+.actions{display:flex;justify-content:space-between;gap:10px;margin-top:18px;flex-wrap:wrap}
+.adminTools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px}
+.adminTools input{max-width:190px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tab.active{box-shadow:0 0 0 2px rgba(200,155,80,.35)}
+.hidden{display:none!important}
+.notice{padding:10px 12px;background:#f7f1fa;border-radius:10px;color:#655873;font-size:13px;margin-top:12px}
+.admin-list{display:grid;gap:10px}
+.booking{padding:15px;background:#fff;border:1px solid var(--line);border-radius:14px;display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap}
+.inlineDetail{flex:0 0 100%;width:100%;min-width:0;max-width:100%;box-sizing:border-box;align-self:stretch;margin-left:0;margin-right:0}
+.calendarStatusLegend{display:none!important}
+.booking.cancelled{opacity:.62}
+.adminAccordion{margin-top:14px;border:1px solid var(--line);border-radius:14px;background:#fbf9fd;overflow:hidden}
+.adminAccordion>summary{cursor:pointer;list-style:none;padding:12px 15px;font-weight:600;display:flex;align-items:center;gap:8px;user-select:none}
+.adminAccordion>summary::-webkit-details-marker{display:none}
+.adminAccordion>summary::before{content:'▸';display:inline-block;transition:transform .15s;color:var(--muted)}
+.adminAccordion[open]>summary::before{transform:rotate(90deg)}
+.adminAccordion .accCount{font-weight:400;font-size:12px;color:var(--muted);background:#eee8f4;border-radius:999px;padding:1px 8px}
+.adminAccordion>.admin-list{padding:0 12px 12px}
+.booking.expired{opacity:.8}
+.status{display:inline-block;padding:4px 9px;border-radius:999px;background:#eee8f4;color:#675778;font-size:12px}
+.bookingActions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.detail{margin-top:12px;padding:15px;background:#fbf9fd;border:1px solid var(--line);border-radius:14px;line-height:1.85}
+.detailGrid{display:grid;grid-template-columns:140px 1fr;gap:4px 12px}
+#myNoteInput{font-size:16px;line-height:1.5;-webkit-text-size-adjust:100%}
+.detailLabel{color:var(--muted)}
+.slotList{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-word}
+.calendarHead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.calendarGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.dow{text-align:center;color:var(--muted);font-size:13px;padding:7px}
+.calDay{min-height:86px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);text-align:left;padding:8px;box-shadow:none}
+.calDay:hover{border-color:#bca8d2}
+.calDay.past{opacity:.45}
+.calDay.closed{background:#f5eef7}
+.calDay.full{background:#f8ecef}
+.calDay.partial{background:#fff8eb}
+.calDay.selected{outline:2px solid var(--amber)}
+.calCount{font-size:12px;color:var(--muted);margin-top:8px}
+.calSlots{font-size:11px;line-height:1.45;margin-top:5px;color:var(--violet-dark);word-break:break-word}
+.customerList{display:grid;gap:10px}
+.customer{padding:15px;background:#fff;border:1px solid var(--line);border-radius:14px}
+.history{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:13px;line-height:1.8}
+.historyJump{padding:0;background:transparent;color:var(--violet-dark);border:0;box-shadow:none;font:inherit;font-weight:700;text-align:left;text-decoration:underline;cursor:pointer}
+.customer details>summary{display:inline-block;padding:6px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--violet-dark);font-weight:700;cursor:pointer;list-style-position:inside}
+.customer details>summary:hover{border-color:#bca8d2}
+.historyJump:hover{color:var(--amber)}
+.customerHistoryItem{line-height:1.8}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:12px}
+.legend span{padding:4px 8px;border-radius:999px;background:#fff;border:1px solid var(--line)}
+@media(max-width:800px){
+.wrap{padding:16px 12px 45px}
+.panel{padding:19px}
+.booking{align-items:flex-start;flex-direction:column}
+.booking>.inlineDetail{align-self:stretch;flex:0 0 auto;width:100%;min-width:0;max-width:100%;margin-left:0;margin-right:0;box-sizing:border-box}
+.booking>.inlineDetail>.detail{width:100%;max-width:100%;margin-left:0;margin-right:0}
+.booking>.custHistory{align-self:stretch;flex:0 0 auto;width:100%;min-width:0;max-width:100%;margin-left:0;margin-right:0;box-sizing:border-box}
+.booking>.custHistory>.history{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+.bookingActions{width:100%}
+header{align-items:flex-start;flex-direction:column}
+.detailGrid{grid-template-columns:1fr}
+.adminTools input{max-width:none}
+.calDay{min-height:70px;padding:6px}
+.calendarGrid{gap:4px}
+}
+@media(max-width:600px){
+.wrap{padding:10px 10px 32px}
+.glass{border-radius:18px}
+header{padding:18px 16px;gap:12px}
+h1{font-size:23px;line-height:1.35}
+header .secondary{width:100%;min-height:44px}
+.panel{padding:16px}
+.tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.tabs button{min-height:44px;padding:10px 8px}
+.adminTools{display:grid;grid-template-columns:1fr;gap:8px}
+.adminTools input,.adminTools select,.adminTools button{max-width:none;width:100%;min-height:46px;font-size:16px}
+.booking{padding:13px;gap:12px}
+.bookingActions{display:grid;grid-template-columns:1fr;gap:7px;width:100%}
+.bookingActions button{width:100%;min-height:44px}
+.detail{overflow-wrap:anywhere}
+.detailGrid{grid-template-columns:1fr;gap:2px 0}
+.detailLabel{margin-top:8px;font-weight:700}
+.calendarHead{align-items:stretch}
+.calendarHead button{min-width:44px;min-height:44px}
+.calendarGrid{gap:3px}
+.calDay{min-height:64px;padding:5px 3px;border-radius:9px;font-size:13px}
+.calCount{font-size:10px;margin-top:5px;line-height:1.25;overflow-wrap:anywhere}
+.customer{padding:13px;overflow-wrap:anywhere}
+.history{font-size:12px;overflow-wrap:anywhere}
+.actions{flex-direction:column}
+.actions>button{width:100%;min-height:46px}
+input,select{min-height:46px;font-size:16px}
+}
+@media(max-width:380px){
+.wrap{padding-left:7px;padding-right:7px}
+.panel{padding:13px}
+h1{font-size:21px}
+.calDay{min-height:58px;font-size:12px}
+.calCount{font-size:9px}
+}
+.tagDelete{border:0;background:transparent;color:#000;cursor:pointer;padding:0 2px;font-weight:700;line-height:1}
+.tagDelete:hover{opacity:.7}
+#importConfirmModal.hidden{display:none!important}
+#importConfirmModal{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.45)}
+#importConfirmModal .importConfirmBox{width:min(520px,100%);background:#fff;border-radius:14px;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.25);box-sizing:border-box}
+#importConfirmModal .importConfirmText{font-size:16px;line-height:1.7;white-space:normal;margin:0 0 20px}
+#importConfirmModal .importConfirmActions{display:flex;justify-content:flex-end;gap:10px}
+#importConfirmModal button{min-width:90px}
+.tag{display:inline-block;padding:2px 8px;border-radius:12px;border:1px solid #c8b6d9;margin:2px;font-size:.85em}
+.statusChoice.selected{outline:2px solid currentColor}
+
+.custHistory{width:100%;flex-basis:100%}
+.svcMain{flex:1 1 240px;min-width:0}
+.svcNums{flex:0 0 150px}
+.svcSide{flex:0 0 auto}
+@media(max-width:800px){
+  .serviceRow{flex-direction:column;align-items:stretch;gap:4px}
+  .svcMain,.svcNums,.svcSide{flex:none;width:100%}
+  .svcMain input.svcName,.svcMain input.svcDesc{width:100%;box-sizing:border-box}
+  .svcMain label,.svcNums label{display:block;margin-top:4px}
+  .svcNums{display:flex;gap:12px}
+  .svcNums > div{flex:1 1 0}
+  .svcNums input{width:100%;box-sizing:border-box}
+  .svcSide{display:flex;justify-content:flex-end;align-items:flex-end;margin-top:2px}
+  .svcSide label{display:flex;align-items:center;gap:4px;font-size:12px;margin:0}
+  .svcSide input.svcActive{width:20px;height:20px;margin:0}
+}
+
+.pageNotice{position:fixed;inset:0;background:rgba(40,30,50,.38);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
+.pageNotice.hidden{display:none}
+.pageNoticeCard{background:#fff;border-radius:18px;padding:22px 24px 18px;min-width:240px;max-width:min(88vw,420px);box-shadow:0 18px 40px rgba(40,30,50,.25)}
+.pageNoticeText{white-space:pre-line;color:#2b2233;line-height:1.7;margin-bottom:16px;font-size:16px}
+.pageNoticeOk{display:block;margin-left:auto;padding:9px 22px;border:0;border-radius:12px;background:linear-gradient(135deg,#9b7fc4,#6f5590);color:#fff;font-weight:700;cursor:pointer}
+.focusFlash{animation:focusFlash 1.8s ease}
+@keyframes focusFlash{0%,40%{box-shadow:0 0 0 3px #c9a7ff}100%{box-shadow:0 0 0 3px transparent}}
+@media(max-width:800px){
+  .tabs{display:flex;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:8px;padding-bottom:6px;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs > button{flex:0 0 auto;white-space:nowrap}
+}
+
+/* ===== 後台版面（第一階段）：電腦左側邊欄、手機底部導覽；配色沿用 :root 變數 ===== */
+body.adminShell{margin:0}
+#adminPanel,#adminPanel>*,#adminPanel>*>*,#adminPanel .glass{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;filter:none!important;transform:none!important;perspective:none!important;contain:none!important}
+#adminPanel .glass{background:#fff!important}
+div:has(> #tabCalendar){margin:0!important;position:fixed;left:0;top:0;bottom:0;width:232px;display:flex!important;flex-direction:column;align-items:stretch;gap:4px;padding:20px 14px;background:var(--glass);border-right:1px solid var(--line);overflow-y:auto;z-index:20;box-sizing:border-box;flex-wrap:nowrap!important}
+div:has(> #tabCalendar) > button{width:100%;justify-content:flex-start;text-align:left;border-radius:12px;padding:10px 14px;box-shadow:none;background:transparent;border:0;color:var(--ink);font-weight:500}
+div:has(> #tabCalendar) > button:hover{background:rgba(142,118,183,.08)}
+div:has(> #tabCalendar) > button.active{background:rgba(142,118,183,.16);color:var(--violet-dark);font-weight:700}
+#adminPanel{margin-left:256px;padding-bottom:24px;min-width:0}
+#adminPanel > .glass:first-child{margin-left:0}
+@media(max-width:800px){
+  div:has(> #tabCalendar){margin:0!important;top:auto;left:0;right:0;bottom:0!important;width:auto;height:auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:8px 10px calc(8px + env(safe-area-inset-bottom,0px));border-right:0;border-top:1px solid var(--line);gap:6px}
+  div:has(> #tabCalendar) > button{flex:0 0 auto;width:auto;white-space:nowrap;font-size:13px;padding:8px 12px}
+  #adminPanel{margin-left:0;padding-bottom:96px}
+}
+
+/* ===== 後台版面（第一階段）：電腦左側邊欄、手機底部導覽；配色沿用 :root 變數 ===== */
+body.adminShell{margin:0}
+#adminPanel,#adminPanel>*,#adminPanel>*>*,#adminPanel .glass{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;filter:none!important;transform:none!important;perspective:none!important;contain:none!important}
+#adminPanel .glass{background:#fff!important}
+div:has(> #tabCalendar){margin:0!important;position:fixed;left:0;top:0;bottom:0;width:232px;display:flex!important;flex-direction:column;align-items:stretch;gap:4px;padding:20px 14px;background:var(--glass);border-right:1px solid var(--line);overflow-y:auto;z-index:20;box-sizing:border-box;flex-wrap:nowrap!important}
+div:has(> #tabCalendar) > button{width:100%;justify-content:flex-start;text-align:left;border-radius:12px;padding:10px 14px;box-shadow:none;background:transparent;border:0;color:var(--ink);font-weight:500}
+div:has(> #tabCalendar) > button:hover{background:rgba(142,118,183,.08)}
+div:has(> #tabCalendar) > button.active{background:rgba(142,118,183,.16);color:var(--violet-dark);font-weight:700}
+#adminPanel{margin-left:0;padding-bottom:24px;min-width:0}
+body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-width:none!important}
+#adminPanel > .glass:first-child{margin-left:0}
+@media(max-width:800px){
+  div:has(> #tabCalendar){margin:0!important;top:auto;left:0;right:0;bottom:0!important;width:auto;height:auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:8px 10px calc(8px + env(safe-area-inset-bottom,0px));border-right:0;border-top:1px solid var(--line);gap:6px}
+  div:has(> #tabCalendar) > button{flex:0 0 auto;width:auto;white-space:nowrap;font-size:13px;padding:8px 12px}
+  body:has(#adminPanel:not(.hidden)) .wrap{margin:0!important;max-width:none!important}
+  div:has(> #tabCalendar) > button{border:1px solid var(--line)!important;background:#fff!important;border-radius:12px}
+  div:has(> #tabCalendar) > button.active{border-color:var(--violet)!important;background:rgba(142,118,183,.16)!important}
+  #adminPanel{margin-left:0;padding-bottom:96px}
+}
+
+/* ===== 後台卡片與按鈕（第二階段）：參考網站的圓角、淺邊框與柔和陰影；配色沿用 :root 變數 ===== */
+#adminPanel .glass,#adminPanel .booking,#adminPanel .card{border-radius:18px;border:1px solid #ece4f3;box-shadow:0 6px 22px rgba(77,59,103,.07)}
+#adminPanel .booking{padding:16px 18px;margin-bottom:12px}
+#adminPanel h2{font-size:20px;font-weight:700;color:var(--violet-dark);letter-spacing:.02em;margin:0 0 12px}
+#adminPanel h3{font-size:16px;font-weight:700;color:var(--ink);margin:0 0 8px}
+#adminPanel .hint{background:#f7f1fb;border-radius:12px;padding:12px 16px;color:var(--muted);line-height:1.6}
+#adminPanel input:not([type=checkbox]),#adminPanel select,#adminPanel textarea{border-radius:12px;border:1px solid #e3d9ee;background:#fff;padding:9px 12px;color:var(--ink)}
+#adminPanel input:focus,#adminPanel select:focus,#adminPanel textarea:focus{outline:none;border-color:var(--violet);box-shadow:0 0 0 3px rgba(142,118,183,.18)}
+#adminPanel button{border-radius:12px}
+#adminPanel .glass>h2:first-child{margin-top:0}
+@media(max-width:800px){#adminPanel .booking{padding:14px}#adminPanel h2{font-size:18px}}
+
+/* ===== 行事曆與預約列表（第三階段）：格子圓角、間距與字級；配色沿用 :root 變數 ===== */
+#adminPanel .calDay{border-radius:16px;min-height:86px;padding:12px 12px 10px;transition:transform .15s ease,box-shadow .15s ease;box-shadow:0 2px 8px rgba(77,59,103,.05)}
+#adminPanel .calDay:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(77,59,103,.10)}
+#adminPanel .calCount{font-size:12px;font-weight:600;color:var(--muted);margin-top:6px;line-height:1.4}
+#adminPanel .calDay[data-status="PARTIAL_CLOSED"],#adminPanel .calDay[data-status="CLOSED"]{background:#f6f0fb}
+#adminPanel .calDay[data-status="RESERVED"]{background:#fff8ec}
+#adminPanel .calDay[data-status="PAST"]{opacity:.55}
+#adminPanel .calHead,#adminPanel .weekHead{font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:600}
+#adminPanel .booking{border-left:4px solid var(--violet)}
+#adminPanel .booking:hover{box-shadow:0 10px 26px rgba(77,59,103,.10)}
+@media(max-width:800px){
+  #adminPanel .calDay{min-height:64px;padding:8px 6px;border-radius:12px}
+  #adminPanel .calCount{font-size:11px}
+}
+
+
+/* 合併行事曆（單一分頁）：電腦左月曆右當日；手機上下 */
+.dayLayout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;align-items:start}
+.dayLayout .dayRight{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+.dayRows{display:grid;gap:6px}.dayRow{display:grid;grid-template-columns:110px minmax(0,1fr) minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:10px 12px;border:1px solid #ece4f3;border-radius:14px;background:#fff}
+.dayName{background:none;border:0;padding:0;color:var(--violet-dark);font-weight:700;text-align:left;cursor:pointer}
+.dayTime,.dayDur,.dayStatus{color:var(--muted);font-size:13px}
+@media(max-width:800px){.dayLayout{grid-template-columns:1fr;gap:12px}.dayLayout .dayRight{position:static;max-height:none}.dayRow{grid-template-columns:1fr 1fr}}
+
+
+/* 客戶 CRM 新版：名冊與詳細檔案（紫色、白色、圓角卡片） */
+.crmSummary{display:flex;gap:12px;margin:0 0 12px}.crmSummary>div{flex:1;background:#fff;border:1px solid #ece4f3;border-radius:16px;padding:14px 16px}.crmSummary span{display:block;color:var(--muted);font-size:13px}.crmSummary b{font-size:24px;color:var(--violet-dark)}
+.crmTable{background:#fff;border:1px solid #ece4f3;border-radius:18px;overflow:hidden}
+.crmHead,.crmRow{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:center;padding:12px 16px}
+.crmHead{background:#faf7fd;color:var(--muted);font-size:12px;font-weight:700}
+.crmRow{border-top:1px solid #f1ebf7;cursor:pointer}.crmRow:hover{background:#faf7fd}
+.crmTag{font-style:normal;display:inline-block;background:#f1e9f8;color:var(--violet-dark);border-radius:999px;padding:1px 8px;margin:2px 4px 0 0;font-size:12px}
+.crmEmpty{padding:24px;text-align:center;color:var(--muted)}
+.crmDetailHead{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}.crmDetailHead .crmTitle{flex:1;min-width:200px}.crmDetailHead h2{margin:0 0 4px}.crmMeta{color:var(--muted);font-size:13px}
+.crmKpis{display:flex;gap:12px;margin-bottom:14px}.crmKpis>div{flex:1;background:#fff;border:1px solid #ece4f3;border-radius:16px;padding:12px 16px}.crmKpis span{display:block;color:var(--muted);font-size:13px}.crmKpis b{font-size:20px;color:var(--violet-dark)}
+.crmTabs{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.crmGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.crmCard{background:#fff;border:1px solid #ece4f3;border-radius:16px;padding:14px 16px;margin-bottom:10px}.crmCard h3{margin:0 0 8px;font-size:15px;color:var(--violet-dark)}
+.crmTagAdd{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.crmResRow{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:12px 14px;border:1px solid #ece4f3;border-radius:14px;margin-bottom:8px;background:#fff;cursor:pointer}
+.crmResRow:hover{background:#faf7fd}.crmStatus{font-weight:700;color:var(--violet-dark)}
+.crmResOpen{margin:-2px 0 10px 0}
+@media(max-width:800px){.crmHead{display:none}.crmRow{grid-template-columns:1fr 1fr}.crmGrid{grid-template-columns:1fr}.crmKpis{flex-wrap:wrap}.crmResRow{grid-template-columns:1fr 1fr}}
+
+
+.crmNote{width:100%;min-height:90px;border:1px solid #e3d9ee;border-radius:12px;padding:10px;box-sizing:border-box;font:inherit;background:#fff}
+.crmNote[readonly]{background:#faf7fd;color:var(--ink)}
+.crmNoteActions{display:flex;justify-content:flex-end;margin-top:8px}
+
+
+/* 預約紀錄展開區：整體為卡片，按鍵置於卡片內右下角 */
+.crmOpenCard{background:#fff;border:1px solid #ece4f3;border-radius:16px;box-shadow:0 6px 20px rgba(77,59,103,.07);margin:-2px 0 12px 0;overflow:hidden}
+.crmOpenCard .crmDetailBox{padding:4px 0}
+.crmOpenCard .crmDetailBox:empty{min-height:80px}
+.crmDetailBar{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid #ece4f3;background:#faf7fd}
+
+
+#closureView .adminTools,#closureView .notice{display:none !important}
+#closureMode{display:none}
+.closureTop{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.closureSummary{display:flex;gap:12px;flex-wrap:wrap}
+.closureSummary>div{background:#fff;border:1px solid #ece4f3;border-radius:16px;padding:12px 18px;min-width:130px}
+.closureSummary span{display:block;color:var(--muted);font-size:13px}
+.closureSummary b{font-size:22px;color:var(--violet-dark)}
+.closureGroup{border-left:4px solid var(--violet)}
+.modalBack{position:fixed;inset:0;background:rgba(40,30,55,.35);display:flex;align-items:center;justify-content:center;z-index:60}
+.modalBack.hidden{display:none}
+.modalCard{background:#fff;border-radius:20px;padding:22px;width:min(440px,92vw);box-shadow:0 14px 40px rgba(77,59,103,.18)}
+.modalCard h2{margin:0 0 10px}
+.stepLabel{font-size:13px;color:var(--muted);margin:14px 0 6px}
+.typeBtns{display:flex;gap:8px;flex-wrap:wrap}
+.typeBtn{border:1px solid #e3d9ee;background:#fff;border-radius:12px;padding:8px 12px;cursor:pointer;color:#4d3b67}
+.typeBtn.selected{background:#f1e9f8;border-color:var(--violet);color:var(--violet-dark);font-weight:700}
+.dateSlot{display:flex;gap:8px;flex-wrap:wrap}
+.modalCard input[type=date],.modalCard select,#closureReason{width:100%;box-sizing:border-box;border:1px solid #e3d9ee;border-radius:12px;padding:9px 12px}
+.modalFoot{display:flex;justify-content:space-between;margin-top:18px}
+
+
+.crmNotesRow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}
+.crmNotesRow>.crmCard{margin-bottom:0}
+@media(max-width:800px){.crmNotesRow{grid-template-columns:1fr}}
+
+
+.crmNotesRow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:stretch}
+.crmNoteCol,.crmTagCol{display:flex;flex-direction:column}
+.crmNoteCol>.crmCard,.crmTagCol>.crmCard{flex:1;margin-bottom:0}
+.crmHistCol{align-self:start}
+.crmTagCol .crmTagAdd{margin-top:auto;flex-wrap:wrap;justify-content:flex-end}
+.crmTagCol .crmTagAdd input{width:100%;box-sizing:border-box}
+.crmTagCol .crmTagAdd button{margin-left:auto}
+@media(max-width:800px){.crmNotesRow{grid-template-columns:1fr}}
+
+
+/* 電腦版：標籤「新增」按鍵置於標籤方塊右下角 */
+.crmTagCol>.crmCard{display:flex;flex-direction:column}
+.crmTagCol .crmTagAdd{margin-top:auto}
+/* 個別客戶：刪除客人與新增預約靠右 */
+.crmHeadBtns{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
+/* 服務方塊：儲存按鍵 */
+.serviceRow .svcSave{margin-top:8px}
+@media(max-width:800px){
+  /* 手機版：登出鍵右上角並排標題 */
+  header.glass{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  header.glass #logout{margin-left:auto}
+  /* 預約行事曆：新增預約（左）、查詢（中）、清除日期（右） */
+  #reservationView .adminTools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  #reservationView .adminTools .tbAdd{order:1}
+  #reservationView .adminTools .tbQuery{order:2}
+  #reservationView .adminTools .tbClear{order:3;margin-left:auto}
+  /* 客戶 CRM：新增客人（左）、重新整理（右） */
+  #customerView .adminTools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  #customerView .adminTools #customerSearch{flex-basis:100%}
+  #customerView .adminTools .tbAdd{order:1}
+  #customerView .adminTools .tbRefresh{order:2;margin-left:auto}
+  /* 個別客戶：刪除客人與新增預約靠右 */
+  .crmHeadBtns{margin-left:0;width:100%;justify-content:flex-end}
+  /* 回收桶：還原與永久移除並排 */
+  #recycleContent .bookingActions{display:flex;gap:8px;flex-wrap:wrap}
+}
+
+
+/* ===== layoutFix2：高優先權覆寫（手機版） ===== */
+@media(max-width:800px){
+  header.glass #logout{display:inline-flex !important;width:auto !important;margin-left:auto !important;flex:0 0 auto}
+  header.glass{flex-direction:row !important;flex-wrap:nowrap !important}
+  header.glass > div:first-child{flex:1 1 auto;min-width:0}
+  #reservationView .adminTools{display:flex !important;flex-direction:row !important;align-items:center;gap:8px;flex-wrap:wrap}
+  #reservationView .adminTools button{width:auto !important;flex:0 0 auto}
+  #reservationView .adminTools .tbAdd{order:1}
+  #reservationView .adminTools .tbQuery{order:2}
+  #reservationView .adminTools .tbClear{order:3;margin-left:auto !important}
+  #customerView .adminTools{display:flex !important;flex-direction:row !important;align-items:center;gap:8px;flex-wrap:wrap}
+  #customerView .adminTools button{width:auto !important;flex:0 0 auto}
+  #customerView .adminTools #customerSearch{flex:1 1 100% !important;width:100%}
+  #customerView .adminTools .tbAdd,#customerView .adminTools #addCustomerBtn{order:1 !important}
+  #customerView .adminTools .tbRefresh,#customerView .adminTools #refreshCustomers{order:2 !important;margin-left:auto !important}
+  #recycleContent .bookingActions{display:flex !important;flex-direction:row !important;gap:8px;flex-wrap:wrap}
+  #recycleContent .bookingActions button{width:auto !important;flex:0 0 auto}
+}
+/* ===== 電腦版：客戶 CRM 新增客人移最右；服務設定新增服務移最右 ===== */
+#customerView .adminTools #addCustomerBtn{order:9}
+#serviceView .adminTools #addServiceRow,#addServiceRow{order:9}
+/* ===== 標籤：長度適應內容（換行） ===== */
+.crmTagCol .crmCard{overflow-wrap:anywhere}
+.crmTagCol .crmCard .crmTag{display:inline-block;max-width:100%;white-space:normal;word-break:break-all;vertical-align:top}
+.crmTagCol .crmTagAdd input{box-sizing:border-box}
+
+
+/* layoutBatch3 */
+/* 標籤：外框隨內容 */
+.crmTagList{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;margin:6px 0}
+.crmTagList .crmTag{display:inline-block;width:auto !important;flex:0 0 auto;max-width:100%}
+/* 客戶 CRM：隱藏重新整理；摘要列右側放新增客人 */
+#refreshCustomers{display:none !important}
+.crmTopRow{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.crmTopRow .crmSummary{margin:0;flex:1 1 auto}
+.crmTopRow #addCustomerBtn{margin-left:auto;flex:0 0 auto}
+/* 服務設定：新增服務在最右（參考公休設定） */
+#addServiceRow{margin-left:auto !important}
+/* 服務方塊底列 */
+.serviceRow{position:relative;display:flex;flex-wrap:wrap}
+.svcFoot{flex:0 0 100%;box-sizing:border-box;display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.svcLeft{flex:0 0 auto}
+.svcMid{flex:1 1 auto;display:flex;justify-content:center;gap:8px}
+.svcRight{flex:0 0 auto;display:flex;gap:8px;align-items:center}
+.svcSave{margin:0}
+/* 日期：空白提示 */
+.dateWrap{position:relative;display:inline-block;width:100%}
+.dateWrap input{width:100%;box-sizing:border-box}
+.dateHint{position:absolute;left:0;right:0;top:0;bottom:0;display:none;align-items:center;justify-content:center;pointer-events:none;color:var(--muted);background:transparent}
+/* 回收桶：還原／永久移除置右下角 */
+#recycleContent .booking{position:relative}
+#recycleContent .booking .bookingActions{position:static !important;display:flex;justify-content:flex-end;gap:8px;margin-top:10px;width:100%}
+@media(max-width:800px){
+  /* 手機：登出僅登入後顯示 */
+  header.glass #logout.hidden{display:none !important}
+  /* 預約行事曆：查詢與清除同大小、相鄰（靠右） */
+  #reservationView .adminTools .tbQuery{order:2;margin-left:auto !important}
+  #reservationView .adminTools .tbClear{order:3;margin-left:0 !important}
+  #reservationView .adminTools .tbQuery,#reservationView .adminTools .tbClear{width:96px !important;min-width:96px;text-align:center;justify-content:center}
+}
+/* 桌機：查詢與清除同大小 */
+#reservationView .adminTools .tbQuery,#reservationView .adminTools .tbClear{width:96px !important;min-width:96px;text-align:center}
+
+
+/* layoutFix4 */
+@media(max-width:800px){ .dateWrap.isEmpty .dateHint{display:flex} }
+/* 客戶 CRM 摘要方塊：與公休設定本月／未來公休一致 */
+.crmSummary{display:flex;gap:12px;flex-wrap:wrap}
+.crmSummary>div{flex:0 0 auto;min-width:130px;background:#fff;border:1px solid #ece4f3;border-radius:16px;padding:12px 18px}
+.crmSummary span{display:block;color:var(--muted);font-size:13px}
+.crmSummary b{font-size:22px;color:var(--violet-dark)}
+/* 服務底列：左（前台顯示）、中（上下移動）、右（儲存、移除） */
+.svcFoot .svcLeft{display:flex;align-items:center}
+.svcFoot .svcMid{justify-content:center}
+.svcFoot .svcRight{justify-content:flex-end}
+
+
+/* layoutFix5 */
+/* 手機版：服務底列左（前台顯示）、中（上下移動）、右（儲存） */
+@media(max-width:800px){
+  .serviceRow{display:flex;flex-wrap:wrap}
+  .svcFoot{flex:0 0 100%;width:100%;flex-direction:row;align-items:center;justify-content:space-between;margin-top:10px}
+}
+/* 電腦版：服務底列在卡片右側，由上而下：前台顯示、上下移動、儲存 */
+@media(min-width:801px){
+  .serviceRow{display:flex;flex-wrap:nowrap;align-items:stretch}
+  .serviceRow>.svcMain,.serviceRow>.svcNums{flex:1 1 auto;min-width:0}
+  .svcFoot{flex:0 0 auto;width:auto;margin-top:0;margin-left:14px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;gap:10px}
+  .svcFoot .svcLeft,.svcFoot .svcMid,.svcFoot .svcRight{display:flex;flex-direction:row;align-items:center;gap:8px}
+  .svcFoot .svcMid{justify-content:flex-end;flex:0 0 auto}
+  .svcFoot .svcRight{flex-direction:row;justify-content:flex-end;flex:0 0 auto}
+  /* 回收桶：右側、上下排列、垂直置中 */
+  #recycleContent .booking{display:flex !important;align-items:center;gap:14px}
+  #recycleContent .booking>*:not(.bookingActions){flex:1 1 auto;min-width:0}
+  #recycleContent .booking .bookingActions{position:static !important;flex-direction:column;justify-content:center;align-items:stretch;margin-top:0;width:auto;flex:0 0 auto;gap:8px}
+  #recycleContent .booking{padding-bottom:0}
+}
+
+
+/* layoutFix6 */
+@media(min-width:801px){
+  #recycleContent .booking .bookingActions{flex-direction:row !important;align-items:center !important;justify-content:flex-end !important}
+}
+@media(max-width:800px){
+  .serviceRow .svcFoot .svcActive{width:44.5px !important;height:23px !important;min-width:0 !important;min-height:0 !important;max-width:none !important;max-height:23px !important}
+}
+
+
+/* crmSearchRow：電腦版電話搜尋置中，與新增客人同列對齊 */
+@media(min-width:801px){
+  .crmTopRow #customerSearch{flex:0 1 260px;width:260px;max-width:260px;margin:0 auto;align-self:center;box-sizing:border-box}
+}
+
+.statusChoice:disabled{opacity:.4;cursor:not-allowed}
+
+.st-6b99de8b{display:none}
+.st-b2c73b3a{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;letter-spacing:.1em}
+.st-d9856522{width:100%;box-sizing:border-box;resize:vertical}
+.st-36764d1e{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.st-1aff7b1a{max-width:220px;flex:1 1 180px}
+.st-d6f2af6e{margin-top:14px}
+.st-3281c71f{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
