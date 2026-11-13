@@ -293,6 +293,7 @@ export function reminderMessage(r) {
 /* 服務帳戶（GOOGLE_AUTH=service）：用私鑰簽署 JWT 取得權杖，不需要使用者登入，也沒有 7 天限制。
  * 日曆須分享給服務帳戶的 email（權限：變更活動）。舊的 refresh token 路徑保留作為回退。 */
 const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 function b64url(bytes) {
   let s = ''; for (const b of new Uint8Array(bytes)) s += String.fromCharCode(b);
@@ -316,7 +317,7 @@ async function signServiceJwt(env, nowMs) {
   const { email, key } = serviceAccount(env);
   const iat = Math.floor(nowMs / 1000);
   const header = b64urlStr(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const claims = b64urlStr(JSON.stringify({ iss: email, scope: GOOGLE_CALENDAR_SCOPE, aud: GOOGLE_TOKEN_URL, iat, exp: iat + 3600 }));
+  const claims = b64urlStr(JSON.stringify({ iss: email, scope: [GOOGLE_CALENDAR_SCOPE, GOOGLE_DRIVE_SCOPE].join(' '), aud: GOOGLE_TOKEN_URL, iat, exp: iat + 3600 }));
   const cryptoKey = await crypto.subtle.importKey('pkcs8', pemToDer(key), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, new TextEncoder().encode(`${header}.${claims}`));
   return `${header}.${claims}.${b64url(sig)}`;
