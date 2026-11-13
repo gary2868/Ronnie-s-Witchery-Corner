@@ -296,6 +296,16 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 .crmNotesRow>.crmCard{margin-bottom:0}
 @media(max-width:800px){.crmNotesRow{grid-template-columns:1fr}}
 </style>
+<style>
+.crmNotesRow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:stretch}
+.crmNoteCol,.crmTagCol{display:flex;flex-direction:column}
+.crmNoteCol>.crmCard,.crmTagCol>.crmCard{flex:1;margin-bottom:0}
+.crmHistCol{align-self:start}
+.crmTagCol .crmTagAdd{margin-top:auto;flex-wrap:wrap;justify-content:flex-end}
+.crmTagCol .crmTagAdd input{width:100%;box-sizing:border-box}
+.crmTagCol .crmTagAdd button{margin-left:auto}
+@media(max-width:800px){.crmNotesRow{grid-template-columns:1fr}}
+</style>
 </head>
 <body>
 <div id="importConfirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="importConfirmText">
