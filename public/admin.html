@@ -433,6 +433,15 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
   #recycleContent .booking{padding-bottom:0}
 }
 </style>
+<style>
+/* layoutFix6 */
+@media(min-width:801px){
+  #recycleContent .booking .bookingActions{flex-direction:row !important;align-items:center !important;justify-content:flex-end !important}
+}
+@media(max-width:800px){
+  .serviceRow .svcFoot .svcActive{width:44.5px !important;height:23px !important;min-width:0 !important;min-height:0 !important;max-width:none !important;max-height:23px !important}
+}
+</style>
 </head>
 <body>
 <div id="importConfirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="importConfirmText">
