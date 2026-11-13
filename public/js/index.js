@@ -83,7 +83,7 @@ async function renderCalendar(){
       else if(st.partialClosure){
         if(!st.available?.length){cls+=' full';attrs+=' disabled';}
         else { cls+=' partial'; attrs+=` data-date="${date}"`; }
-        title.push('部分公休');
+        // 指定時段不可預約：前台格子不顯示文字
       }
       else if(!st.available?.length){cls+=' full';attrs+=' disabled';title.push('已額滿');}
       else{
