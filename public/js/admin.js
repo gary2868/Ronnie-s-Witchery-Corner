@@ -2355,7 +2355,7 @@ function wrapTagChips(card){
     box.querySelectorAll('.serviceRow').forEach(row => {
       if (row.querySelector('.svcFoot')) return;
       const foot = document.createElement('div'); foot.className = 'svcFoot';
-      const left = document.createElement('div'); left.className = 'svcLeft svcSide';
+      const left = document.createElement('div'); left.className = 'svcLeft';
       const mid = document.createElement('div'); mid.className = 'svcMid';
       const right = document.createElement('div'); right.className = 'svcRight';
       const chk = row.querySelector('.svcActive'); const lab = chk ? chk.closest('label') : null;

@@ -411,6 +411,28 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 .svcFoot .svcMid{justify-content:center}
 .svcFoot .svcRight{justify-content:flex-end}
 </style>
+<style>
+/* layoutFix5 */
+/* 手機版：服務底列左（前台顯示）、中（上下移動）、右（儲存） */
+@media(max-width:800px){
+  .serviceRow{display:flex;flex-wrap:wrap}
+  .svcFoot{flex:0 0 100%;width:100%;flex-direction:row;align-items:center;justify-content:space-between;margin-top:10px}
+}
+/* 電腦版：服務底列在卡片右側，由上而下：前台顯示、上下移動、儲存 */
+@media(min-width:801px){
+  .serviceRow{display:flex;flex-wrap:nowrap;align-items:stretch}
+  .serviceRow>.svcMain,.serviceRow>.svcNums{flex:1 1 auto;min-width:0}
+  .svcFoot{flex:0 0 auto;width:auto;margin-top:0;margin-left:14px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;gap:10px}
+  .svcFoot .svcLeft,.svcFoot .svcMid,.svcFoot .svcRight{display:flex;flex-direction:row;align-items:center;gap:8px}
+  .svcFoot .svcMid{justify-content:flex-end;flex:0 0 auto}
+  .svcFoot .svcRight{flex-direction:row;justify-content:flex-end;flex:0 0 auto}
+  /* 回收桶：右側、上下排列、垂直置中 */
+  #recycleContent .booking{display:flex !important;align-items:center;gap:14px}
+  #recycleContent .booking>*:not(.bookingActions){flex:1 1 auto;min-width:0}
+  #recycleContent .booking .bookingActions{position:static !important;flex-direction:column;justify-content:center;align-items:stretch;margin-top:0;width:auto;flex:0 0 auto;gap:8px}
+  #recycleContent .booking{padding-bottom:0}
+}
+</style>
 </head>
 <body>
 <div id="importConfirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="importConfirmText">
