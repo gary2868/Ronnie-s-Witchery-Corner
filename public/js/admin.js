@@ -253,7 +253,7 @@ function renderAdminCalendar(data) {
 
     // calendarLabelPolish：公休顯示休假原因；過去日期顯示原來資訊；時段公休不顯示
     if (status === 'CLOSED' || status === 'PAST') eventLabel = x?.closureReason || (reservationCount > 0 ? `已預約 ${reservationCount} 筆` : '');
-    if (status === 'PARTIAL_CLOSED' && reservationCount === 0) eventLabel = '';
+
     html += `<button type="button" class="calDay ${status.toLowerCase()}" data-date="${date}" data-booked=\"${reservationCount}\" data-status="${status}"><b>${d}</b><div class="calCount">${esc(eventLabel)}</div></button>`;
   }
 
@@ -1844,14 +1844,14 @@ function renderCustomerDetail(){
     '<div class="crmKpis"><div><span>完成服務</span><b>' + s.done + '</b> 次</div>' +
     '<div><span>最近到訪</span><b>' + esc(s.lastVisit || '—') + '</b></div>' +
     '<div><span>未來預約</span><b>' + s.futureCount + '</b> 筆</div></div>';
-  const tabNames = [['overview', '總覽'], ['list', '預約紀錄'], ['notes', '客戶備註']];
+  const tabNames = [['overview', '總覽'], ['list', '預約紀錄'], ['notes', '備註/標籤']];
   const tabs = '<div class="crmTabs">' + tabNames.map(([k, n]) =>
     '<button class="' + (crmView.tab === k ? '' : 'secondary') + '" data-act="crmSetTab" data-args="' + esc(JSON.stringify([k])) + '">' + n + '</button>').join('') + '</div>';
   let body = '';
   if (crmView.tab === 'overview') {
     const latest = list[0];
     const next = list.find(crmIsFuture);
-    body = '<div class="crmGrid">' + '<div class="crmCard"><h3>我的備註</h3>' + (c.staffNote ? esc(c.staffNote) : '<span class="crmMuted">尚未填寫（總覽：我的備註）</span>') + '</div>' +
+    body = '<div class="crmGrid">' + '<div class="crmCard"><h3>我的備註</h3>' + (c.staffNote ? esc(c.staffNote) : '<span class="crmMuted">尚未填寫</span>') + '</div>' +
       '<div class="crmCard"><h3>客戶資料</h3>生日：' + esc(c.birthDate || '—') + '<br>首次預約：' + esc(s.first || '—') + '</div>' +
       '<div class="crmCard"><h3>最近活動</h3>' + (latest ? esc(latest.date) + ' · ' + esc(latest.serviceName || '') + ' · ' + esc(crmStatusText(latest)) : '尚無預約') + '</div>' +
       '<div class="crmCard"><h3>下一次預約</h3>' + (next ? esc(next.date) + ' ' + esc(crmHm(next.startTime)) + '–' + esc(crmHm(next.endTime)) + ' · ' + esc(next.serviceName || '') + ' · ' + esc(next.durationMinutes || '') + ' 分鐘' : '無') + '</div>' +
@@ -1878,6 +1878,7 @@ function renderCustomerDetail(){
         '<br>客人的備註：' + esc(r.note || '—') + '</div>').join('') : '尚無預約');
   }
   $('customerContent').innerHTML = head + tabs + body;
+  if (crmView.tab === 'notes') arrangeNotesRow();
   if (crmView.openRes) crmLoadOpenDetail(encodeURIComponent(crmView.openRes));
 }
 // ---- 載入 ----
@@ -2245,3 +2246,16 @@ function setupClosureForm(){
 }
 document.addEventListener('DOMContentLoaded', setupClosureForm);
 if (document.readyState !== 'loading') setupClosureForm();
+// 備註/標籤分頁：我的備註與標籤並排同一列（保持各自原高度）
+function arrangeNotesRow(){
+  const root = $('customerContent');
+  const cards = [...root.querySelectorAll('.crmCard')];
+  const h = c => { const t = c.querySelector('h3'); return t ? t.textContent.trim() : ''; };
+  const noteCard = cards.find(c => h(c) === '我的備註');
+  const tagCard = cards.find(c => h(c) === '標籤');
+  if (!noteCard || !tagCard || (noteCard.parentElement && noteCard.parentElement.classList.contains('crmNotesRow'))) return;
+  const row = document.createElement('div');
+  row.className = 'crmNotesRow';
+  noteCard.parentElement.insertBefore(row, noteCard);
+  row.append(noteCard, tagCard);
+}
