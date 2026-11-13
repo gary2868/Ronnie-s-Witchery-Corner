@@ -306,6 +306,34 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 .crmTagCol .crmTagAdd button{margin-left:auto}
 @media(max-width:800px){.crmNotesRow{grid-template-columns:1fr}}
 </style>
+<style>
+/* 電腦版：標籤「新增」按鍵置於標籤方塊右下角 */
+.crmTagCol>.crmCard{display:flex;flex-direction:column}
+.crmTagCol .crmTagAdd{margin-top:auto}
+/* 個別客戶：刪除客人與新增預約靠右 */
+.crmHeadBtns{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
+/* 服務方塊：儲存按鍵 */
+.serviceRow .svcSave{margin-top:8px}
+@media(max-width:800px){
+  /* 手機版：登出鍵右上角並排標題 */
+  header.glass{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  header.glass #logout{margin-left:auto}
+  /* 預約行事曆：新增預約（左）、查詢（中）、清除日期（右） */
+  #reservationView .adminTools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  #reservationView .adminTools .tbAdd{order:1}
+  #reservationView .adminTools .tbQuery{order:2}
+  #reservationView .adminTools .tbClear{order:3;margin-left:auto}
+  /* 客戶 CRM：新增客人（左）、重新整理（右） */
+  #customerView .adminTools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  #customerView .adminTools #customerSearch{flex-basis:100%}
+  #customerView .adminTools .tbAdd{order:1}
+  #customerView .adminTools .tbRefresh{order:2;margin-left:auto}
+  /* 個別客戶：刪除客人與新增預約靠右 */
+  .crmHeadBtns{margin-left:0;width:100%;justify-content:flex-end}
+  /* 回收桶：還原與永久移除並排 */
+  #recycleContent .bookingActions{display:flex;gap:8px;flex-wrap:wrap}
+}
+</style>
 </head>
 <body>
 <div id="importConfirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="importConfirmText">
@@ -395,10 +423,10 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
   </div>
 
   <div id="serviceView" class="hidden">
-    <div class="notice">服務名稱、說明、時長、價格可修改；取消勾選「前台顯示」即停用（前台不顯示、不可預約，既有預約不受影響）。時長須為 30 分鐘的倍數。</div>
+    
     <div class="adminTools">
       <button id="addServiceRow" class="secondary">＋ 新增服務</button>
-      <button id="saveServices">儲存服務設定</button>
+      <button id="saveServices" style="display:none">儲存服務設定</button>
     </div>
     <div id="serviceContent"></div>
   </div>

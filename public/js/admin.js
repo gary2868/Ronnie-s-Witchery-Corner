@@ -1187,6 +1187,7 @@ function serviceRowHtml(s, i) {
     <div class="svcSide">
       <label><input class="svcActive" type="checkbox" ${s.active === false ? '' : 'checked'}> 前台顯示</label> <button type="button" class="secondary" data-act="moveServiceUp">▲</button> <button type="button" class="secondary" data-act="moveServiceDown">▼</button>
       ${isNew ? '<button type="button" class="danger" data-act="removeNewServiceRow">移除</button>' : ''}
+      <button type="button" class="primary svcSave" data-act="saveServicesCard">儲存</button>
     </div>
   </div>`;
 }
@@ -1623,6 +1624,8 @@ const ACTIONS = {
   deleteCustomerTag: (el, ...a) => deleteCustomerTag(...a),
   toggleCustHistory: (el) => toggleCustHistory(el),
   deleteCustomer: (el, ...a) => deleteCustomer(...a),
+  saveServicesCard: () => saveServices(),
+  crmDeleteCustomer: (el, enc) => crmDeleteCustomer(enc),
   addCustomerTag: (el, ...a) => addCustomerTag(...a),
   openCustomerReservation: (el, ...a) => openCustomerReservation(...a),
   deleteCustomerHistory: (el, ...a) => deleteCustomerHistory(...a),
@@ -1840,7 +1843,8 @@ function renderCustomerDetail(){
     '<div class="crmTitle"><h2>' + esc(c.name || '') + '</h2>' +
     '<div class="crmMeta">' + esc(c.phone || '—') + ' · ' + (s.lineBound ? 'LINE 已綁定' : 'LINE 未綁定') + '</div>' +
     '<div>' + crmTags(c) + '</div></div>' +
-    '<button data-act="crmNewReservation">＋ 新增預約</button></div>' +
+    '<div class="crmHeadBtns"><button data-act="crmNewReservation">＋ 新增預約</button>' +
+    '<button class="danger" data-act="crmDeleteCustomer" data-args="' + esc(JSON.stringify([encodeURIComponent(c.id)])) + '">刪除客人</button></div></div>' +
     '<div class="crmKpis"><div><span>完成服務</span><b>' + s.done + '</b> 次</div>' +
     '<div><span>最近到訪</span><b>' + esc(s.lastVisit || '—') + '</b></div>' +
     '<div><span>未來預約</span><b>' + s.futureCount + '</b> 筆</div></div>';
@@ -2286,3 +2290,21 @@ function arrangeNotesRow(){
   colTag.appendChild(tagCard);
   histNodes.forEach(n => colHist.appendChild(n));
 }
+// ===== 個別客戶：刪除客人（刪除後回到名冊）=====
+async function crmDeleteCustomer(enc){
+  const id = decodeURIComponent(enc || '');
+  await deleteCustomer(enc);
+  await loadCustomers();
+  if (!(customers || []).some(x => x.id === id)) crmBack();
+}
+// ===== 手機版按鍵排序（以按鍵文字加上 class，CSS 負責排序）=====
+(function tagToolbarButtons(){
+  const mark = (scope, rules) => {
+    document.querySelectorAll(scope + ' button').forEach(b => {
+      const t = (b.textContent || '').trim();
+      for (const [needle, cls] of rules) if (t.indexOf(needle) >= 0) { b.classList.add(cls); break; }
+    });
+  };
+  mark('#reservationView .adminTools', [['新增預約', 'tbAdd'], ['查詢', 'tbQuery'], ['清除', 'tbClear']]);
+  mark('#customerView .adminTools', [['新增客人', 'tbAdd'], ['重新整理', 'tbRefresh']]);
+})();
