@@ -1690,11 +1690,12 @@ const server = http.createServer(async (req, res) => {
           const partialDays = days.filter(d => closuresAll.some(x => x.date === d && (x.startTime || x.endTime)));
           if (partialDays.length) return json(res,409,{error:`以下日期已有時段公休，請先刪除：${partialDays.join('、')}`, code:'HAS_PARTIAL', dates:partialDays});
           const nowIso = new Date().toISOString();
+          const reason = String(data.reason || '').trim().slice(0, 60) || '公休';
           const created = [];
           let skipped = 0;
           for (const d of days) {
             if (closuresAll.some(x => x.date === d && !x.startTime && !x.endTime)) { skipped++; continue; }
-            const item = { id: crypto.randomUUID(), date: d, createdAt: nowIso };
+            const item = { id: crypto.randomUUID(), date: d, reason, createdAt: nowIso };
             closuresAll.push(item);
             created.push(item);
           }
@@ -1731,7 +1732,7 @@ const server = http.createServer(async (req, res) => {
           allDay || (!x.startTime && !x.endTime) || (toMinutes(startTime) < toMinutes(x.endTime) && toMinutes(endTime) > toMinutes(x.startTime))
         ));
         if (overlap) return json(res,409,{error:'這個日期／時段已有公休設定'});
-        const item={id:crypto.randomUUID(),date,...(allDay?{}:{startTime,endTime}),createdAt:new Date().toISOString()};
+        const item={id:crypto.randomUUID(),date,...(allDay?{}:{startTime,endTime}),reason:String(data.reason||'').trim().slice(0,60)||'公休',createdAt:new Date().toISOString()};
         closures.push(item); await queueWrite(CLOSURES_FILE,closures); invalidateCalendarCaches(); await emitClosureChanged(); return json(res,201,{closure:item});
       }
       const closureMatch = u.pathname.match(/^\/api\/admin\/closures\/([^/]+)$/);

@@ -270,6 +270,27 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 .crmOpenCard .crmDetailBox:empty{min-height:80px}
 .crmDetailBar{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid #ece4f3;background:#faf7fd}
 </style>
+<style>
+#closureView .adminTools,#closureView .notice{display:none !important}
+#closureMode{display:none}
+.closureTop{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.closureSummary{display:flex;gap:12px;flex-wrap:wrap}
+.closureSummary>div{background:#fff;border:1px solid #ece4f3;border-radius:16px;padding:12px 18px;min-width:130px}
+.closureSummary span{display:block;color:var(--muted);font-size:13px}
+.closureSummary b{font-size:22px;color:var(--violet-dark)}
+.closureGroup{border-left:4px solid var(--violet)}
+.modalBack{position:fixed;inset:0;background:rgba(40,30,55,.35);display:flex;align-items:center;justify-content:center;z-index:60}
+.modalBack.hidden{display:none}
+.modalCard{background:#fff;border-radius:20px;padding:22px;width:min(440px,92vw);box-shadow:0 14px 40px rgba(77,59,103,.18)}
+.modalCard h2{margin:0 0 10px}
+.stepLabel{font-size:13px;color:var(--muted);margin:14px 0 6px}
+.typeBtns{display:flex;gap:8px;flex-wrap:wrap}
+.typeBtn{border:1px solid #e3d9ee;background:#fff;border-radius:12px;padding:8px 12px;cursor:pointer}
+.typeBtn.selected{background:#f1e9f8;border-color:var(--violet);color:var(--violet-dark);font-weight:700}
+.dateSlot{display:flex;gap:8px;flex-wrap:wrap}
+.modalCard input[type=date],.modalCard select,#closureReason{width:100%;box-sizing:border-box;border:1px solid #e3d9ee;border-radius:12px;padding:9px 12px}
+.modalFoot{display:flex;justify-content:space-between;margin-top:18px}
+</style>
 </head>
 <body>
 <div id="importConfirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="importConfirmText">
@@ -338,6 +359,10 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
   </div>
 
   <div id="closureView" class="hidden">
+    <div class="closureTop">
+      <div class="closureSummary"><div><span>本月公休</span><b id="sumMonth">0</b></div><div><span>未來公休</span><b id="sumFuture">0</b></div></div>
+      <button id="openClosureForm" class="primary">＋ 新增公休</button>
+    </div>
     <div class="notice">可設定全天公休、多日連休（每天一筆），或指定 30 分鐘區間為不可預約時間。</div>
     <div class="adminTools">
       <input id="closureDate" type="date">
@@ -382,5 +407,19 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 
 <script src="/js/ui-dialog.js"></script>
 <script src="/js/admin.js"></script>
+<div id="closureModal" class="modalBack hidden"><div class="modalCard">
+  <h2>新增公休</h2>
+  <div class="stepLabel">第一步：選擇類型</div>
+  <div class="typeBtns">
+    <button type="button" class="typeBtn" data-mode="all">全天公休</button>
+    <button type="button" class="typeBtn" data-mode="multi">連續多日公休</button>
+    <button type="button" class="typeBtn" data-mode="range">指定時段不可預約</button>
+  </div>
+  <div class="stepLabel">第二步：選擇日期</div>
+  <div id="closureDateSlot" class="dateSlot"></div>
+  <div class="stepLabel">第三步：休假原因（選填）</div>
+  <input id="closureReason" maxlength="60" value="公休">
+  <div class="modalFoot"><button type="button" id="closureCancel" class="secondary">取消</button><button type="button" id="closureSubmit" class="primary">完成</button></div>
+</div></div>
 </body>
 </html>
