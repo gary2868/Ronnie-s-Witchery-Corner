@@ -1872,8 +1872,8 @@ function renderCustomerDetail(){
   } else {
     body = crmNoteBlock(c) + '<div class="crmCard"><h3>標籤</h3>' + (Array.isArray(c.tags) && c.tags.length ? crmTags(c) : '尚無標籤') +
       '<div class="crmTagAdd"><input id="ct-' + esc(c.id) + '" placeholder="新增標籤">' +
-      '<button class="secondary" data-act="addCustomerTag" data-args="' + esc(JSON.stringify([encodeURIComponent(c.id)])) + '">新增標籤</button></div></div>' +
-      '<h3 style="margin-top:14px">每次預約的備註</h3>' +
+      '<button data-act="addCustomerTag" data-args="' + esc(JSON.stringify([encodeURIComponent(c.id)])) + '">新增</button></div></div>' +
+      '<h3 style="margin-top:14px">歷次預約備註</h3>' +
       (list.length ? list.map(r => '<div class="crmCard"><b>' + esc(String(r.date)) + ' ' + esc(r.serviceName || '') + '</b>' +
         '<br>客人的備註：' + esc(r.note || '—') + '</div>').join('') : '尚無預約');
   }
@@ -2247,7 +2247,7 @@ function setupClosureForm(){
 document.addEventListener('DOMContentLoaded', setupClosureForm);
 if (document.readyState !== 'loading') setupClosureForm();
 // 備註/標籤分頁：我的備註與標籤並排同一列（保持各自原高度）
-function arrangeNotesRow(){
+function arrangeNotesRowLegacy(){
   const root = $('customerContent');
   const cards = [...root.querySelectorAll('.crmCard')];
   const h = c => { const t = c.querySelector('h3'); return t ? t.textContent.trim() : ''; };
@@ -2258,4 +2258,31 @@ function arrangeNotesRow(){
   row.className = 'crmNotesRow';
   noteCard.parentElement.insertBefore(row, noteCard);
   row.append(noteCard, tagCard);
+}
+// 備註/標籤分頁：我的備註、標籤、歷次預約備註 三欄並排（我的備註與標籤等高；歷次保持原高度）
+function arrangeNotesRow(){
+  const root = $('customerContent');
+  if (root.querySelector('.crmNotesRow')) return;
+  const h = el => { const t = el.querySelector ? el.querySelector('h3') : null; return t ? t.textContent.trim() : ''; };
+  const cards = [...root.querySelectorAll('.crmCard')];
+  const noteCard = cards.find(c => h(c) === '我的備註');
+  const tagCard = cards.find(c => h(c) === '標籤');
+  if (!noteCard || !tagCard) return;
+  const histHead = [...root.querySelectorAll('h3')].find(x => x.textContent.trim() === '歷次預約備註');
+  const histNodes = [];
+  if (histHead) {
+    histNodes.push(histHead);
+    let n = histHead.nextElementSibling;
+    while (n) { histNodes.push(n); n = n.nextElementSibling; }
+  }
+  const row = document.createElement('div');
+  row.className = 'crmNotesRow';
+  const colNote = document.createElement('div'); colNote.className = 'crmNoteCol';
+  const colTag = document.createElement('div'); colTag.className = 'crmTagCol';
+  const colHist = document.createElement('div'); colHist.className = 'crmHistCol';
+  noteCard.parentElement.insertBefore(row, noteCard);
+  row.append(colNote, colTag, colHist);
+  colNote.appendChild(noteCard);
+  colTag.appendChild(tagCard);
+  histNodes.forEach(n => colHist.appendChild(n));
 }
