@@ -51,7 +51,6 @@ export const REQUIRED_CONFIG = {
 /** 回傳「已啟用（on/dry）但缺少」的設定名稱（只回傳名稱，絕不輸出值）。force=true 時不看開關。 */
 function requiredFor(env, feature) {
   if (feature === 'FEATURE_CALENDAR' && env.GOOGLE_AUTH === 'service') return [...SB, 'GOOGLE_SERVICE_ACCOUNT_JSON', 'GOOGLE_CALENDAR_ID'];
-  if (feature === 'FEATURE_BACKUP' && env.GOOGLE_AUTH === 'service') return ['GOOGLE_SERVICE_ACCOUNT_JSON', 'GOOGLE_DRIVE_FOLDER_ID', 'RENDER_BASE_URL', 'INTEGRATION_WORKER_SECRET'];
   return REQUIRED_CONFIG[feature];
 }
 export function missingConfig(env, feature, force = false) {
@@ -345,15 +344,32 @@ export async function googleToken(env, deps) {
   deps.state.googleToken = { value: j.access_token, exp: deps.now() + (Number(j.expires_in) || 3600) * 1000 };
   return j.access_token;
 }
+/* 備份（Google Drive）專用權杖：個人 Google 帳號 OAuth（refresh token），與日曆的服務帳號權杖分開快取。 */
+const GOOGLE_DRIVE_API_RE = /googleapis\.com\/(upload\/)?drive\//;
+export async function driveToken(env, deps) {
+  const c = deps.state.driveToken;
+  if (c && c.exp > deps.now() + 60e3) return c.value;
+  const form = { client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, refresh_token: env.GOOGLE_REFRESH_TOKEN, grant_type: 'refresh_token' };
+  const res = await tfetch(env, deps, env.GOOGLE_TOKEN_URL || GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(form).toString(),
+  });
+  if (!res.ok && (res.status === 400 || res.status === 401)) deps.state.googleAuthFailed = true;   // 讓本次執行結束時通知管理者
+  if (!res.ok) throw transientError(`Google Drive 權杖 ${res.status}（OAuth 授權失效請重新取得 GOOGLE_REFRESH_TOKEN）: ${(await res.text()).slice(0, 200)}`, { status: res.status });
+  const j = await res.json();
+  deps.state.driveToken = { value: j.access_token, exp: deps.now() + (Number(j.expires_in) || 3600) * 1000 };
+  return j.access_token;
+}
 async function gfetch(env, deps, url, { method = 'GET', body, headers = {}, rawBody, okStatuses = [] } = {}) {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const token = await googleToken(env, deps);
+    const token = GOOGLE_DRIVE_API_RE.test(url) ? await driveToken(env, deps) : await googleToken(env, deps);
     const res = await tfetch(env, deps, url, {
       method,
       headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...headers },
       body: rawBody !== undefined ? rawBody : (body === undefined ? undefined : JSON.stringify(body)),
     });
-    if (res.status === 401 && attempt === 0) { deps.state.googleToken = null; continue; }
+    if (res.status === 401 && attempt === 0) { deps.state.googleToken = null; deps.state.driveToken = null; continue; }
     const text = await res.text();
     if (!res.ok && !okStatuses.includes(res.status)) throw transientError(`Google ${method} ${url.split('?')[0]} ${res.status}: ${text.slice(0, 200)}`, { status: res.status });
     let json = null; try { json = text ? JSON.parse(text) : null; } catch { /* 非 JSON */ }
@@ -801,7 +817,7 @@ async function driveUploadStream(env, deps, name, stream, len) {
   });
   const session = init.headers && init.headers.get('location');
   if (!session) throw new Error('Drive 未回傳上傳工作階段網址（Location）');
-  const token = await googleToken(env, deps);
+  const token = await driveToken(env, deps);
   const res = await tfetch(env, deps, session, {
     method: 'PUT', body: stream, duplex: 'half',      // duplex 為 Node 測試所需；Workers 會忽略
     headers: { 'Content-Type': 'application/json', 'Content-Length': String(len), Authorization: `Bearer ${token}` },
