@@ -1556,7 +1556,8 @@ const server = http.createServer(async (req, res) => {
           for(const c of closures.filter(x=>x.date===date && x.startTime && x.endTime)){
             for(let mm=toMinutes(c.startTime); mm<toMinutes(c.endTime); mm+=CONFIG.slotMinutes) closureSlots.push(fromMinutes(mm));
           }
-          out.push({date,status,reservationCount,bookedSlots,closureSlots:[...new Set(closureSlots)].sort((a,b)=>toMinutes(a)-toMinutes(b))});
+          const dayClosure = closures.find(x=>x.date===date && !x.startTime && !x.endTime);
+          out.push({date,status,reservationCount,closureReason:dayClosure?(dayClosure.reason||'公休'):'',bookedSlots,closureSlots:[...new Set(closureSlots)].sort((a,b)=>toMinutes(a)-toMinutes(b))});
         }
         calendarMonthCache.set(cacheKey,{time:Date.now(),data:out});
         return json(res,200,out);
