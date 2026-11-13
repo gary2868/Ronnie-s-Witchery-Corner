@@ -4,24 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>我的預約｜蘿妮的療癒空間</title>
-<style>
-body{margin:0;font-family:"Noto Sans TC",system-ui,sans-serif;background:#f7f3fb;color:#2b2233;line-height:1.6}
-header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 20px;background:#fff;box-shadow:0 2px 10px rgba(60,40,90,.08)}
-header h1{font-size:20px;margin:0}
-main{max-width:720px;margin:0 auto;padding:16px}
-a.btn,button{font:inherit;border:0;border-radius:12px;padding:9px 16px;cursor:pointer;background:linear-gradient(135deg,#9b7fc4,#6f5590);color:#fff;text-decoration:none;display:inline-block}
-button.secondary,a.secondary{background:#fff;color:#6f5590;border:1px solid #d8cbe8}
-button.danger{background:#fff;color:#a33;border:1px solid #e3b8b8}
-button:disabled{opacity:.45;cursor:not-allowed}
-[hidden],.hidden{display:none!important}
-.card{background:#fff;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 2px 10px rgba(60,40,90,.06)}
-.card .meta{color:#6b5f7a;font-size:14px}
-.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:flex-end}
-.slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;margin-top:10px}
-.slot.selected{outline:2px solid #6f5590}
-.notice{padding:10px 12px;border-radius:12px;background:#efe8f7;margin:10px 0}
-input[type=date],select{font:inherit;padding:8px;border-radius:10px;border:1px solid #d8cbe8}
-</style>
+<link rel="stylesheet" href="/css/my-reservations.css">
 </head>
 <body>
 <header>
@@ -40,7 +23,7 @@ input[type=date],select{font:inherit;padding:8px;border-radius:10px;border:1px s
   <div id="notice" class="notice hidden"></div>
   <div id="listBox" class="hidden"></div>
   <div id="changeBox" class="card hidden">
-    <h2 style="margin-top:0">修改預約</h2>
+    <h2 class="st-d462248a">修改預約</h2>
     <div class="meta" id="changeCurrent"></div>
     <p><label>服務項目 <select id="changeService"></select></label></p>
     <p><label>日期 <input type="date" id="changeDate"></label></p>

@@ -429,7 +429,15 @@ async function casUpdateReservationMetaEntry(reservationId, patch) {
     const cur = await readReservationMetaRemoteStrict();
     const next = JSON.parse(JSON.stringify(cur));
     next[reservationId] = { ...(next[reservationId] || {}), ...patch };
-    const res = await casReservationMeta(cur, next);
+    let res;
+    try { res = await casReservationMeta(cur, next); }
+    catch (error) {
+      // 綁定碼：RPC 回應遺失時重新讀取確認，已寫入則視為成功
+      let now = null; try { now = await readReservationMetaRemoteStrict(); } catch { now = null; }
+      if (!now || canonicalMeta(now) !== canonicalMeta(next)) throw error;
+      console.warn('[meta-cas] 綁定碼 RPC 回應遺失，已確認寫入成功');
+      res = { status: 'already_current' };
+    }
     if (res.status === 'written' || res.status === 'already_current') { reservationMetaBaseline = next; return; }
     // conflict：外部已修改，重新讀取後重試
   }
@@ -453,7 +461,13 @@ async function syncReservationsIncremental(rows, mapped) {
       const candidate = mergeReservationMetaEntries(expected, baseMeta, localNext);
       let res;
       try { res = await casReservationMeta(expected, candidate); }
-      catch (error) { return failAfterDataRollback(key, table, before, plan, error); }
+      catch (error) {
+        // RPC 回應可能遺失而寫入已成功：重新讀取確認；內容已是本次結果則視為成功，否則才回滾
+        let now = null; try { now = await readReservationMetaRemoteStrict(); } catch { now = null; }
+        if (!now || canonicalMeta(now) !== canonicalMeta(candidate)) return failAfterDataRollback(key, table, before, plan, error);
+        console.warn('[meta-cas] RPC 回應遺失，已確認寫入成功');
+        res = { status: 'already_current' };
+      }
       if (res.status === 'written' || res.status === 'already_current') { reservationMetaBaseline = candidate; written = true; }
       else if (res.status === 'conflict') expected = res.current ?? {};
       else if (res.status === 'missing') expected = {};
@@ -645,7 +659,7 @@ function securityHeaders(res) {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'same-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'");
 }
 function readBody(req) {
   return new Promise((resolve, reject) => {

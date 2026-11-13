@@ -674,17 +674,17 @@ async function showDetail(id) {
           <div class="detailLabel">電話</div><div>${esc(x.phone || '—')}</div>
           <div class="detailLabel">服務</div><div>${esc(x.serviceName)}（${esc(x.durationMinutes)} 分鐘）</div>
           <div class="detailLabel">預約時間</div><div>${esc(String(x.date || '').slice(0,10))} ${esc(x.startTime || '')}–${esc(x.endTime || '')}</div>
-          <div class="detailLabel">綁定碼</div><div>${x.lineBindCode ? `<span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;letter-spacing:.1em">${esc(x.lineBindCode)}</span>${x.lineBound ? '（已綁定）' : ''}` : (x.lineBound ? '已綁定 LINE（登入綁定，無綁定碼）' : '—')}</div>
+          <div class="detailLabel">綁定碼</div><div>${x.lineBindCode ? `<span class="st-b2c73b3a">${esc(x.lineBindCode)}</span>${x.lineBound ? '（已綁定）' : ''}` : (x.lineBound ? '已綁定 LINE（登入綁定，無綁定碼）' : '—')}</div>
           <div class="detailLabel">客人的備註</div><div>${esc(x.note || '—')}</div>
           <div class="detailLabel">我的備註</div>
-          <div><textarea id="myNoteInput" rows="4" maxlength="500" style="width:100%;box-sizing:border-box;resize:vertical">${noteValue}</textarea></div>
+          <div><textarea id="myNoteInput" rows="4" maxlength="500" class="st-d9856522">${noteValue}</textarea></div>
 
           <div class="detailLabel">預定狀態</div>
           <div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              ${['Finished','Cancel','No-show','Other'].map(v => `<button type="button" class="secondary statusChoice ${status === v ? 'selected' : ''}" ${lockedCancelled && v !== 'Cancel' ? 'disabled style="opacity:.4;cursor:not-allowed"' : ''} data-act="chooseStatus" data-args="${esc(JSON.stringify([v]))}">${v}</button>`).join('')}
-              <input id="otherStatusInput" data-in="previewReservationStatus" data-args="${esc(JSON.stringify(['Other']))}" class="${status === 'Other' ? '' : 'hidden'}" maxlength="100" placeholder="請輸入自定義狀態" value="${esc(x.otherStatus || '')}" style="max-width:220px;flex:1 1 180px">
-              <button class="primary" style="display:none" data-act="saveReservationDetail" data-args="${esc(JSON.stringify([encodeURIComponent(x.id)]))}">儲存</button>
+            <div class="st-36764d1e">
+              ${['Finished','Cancel','No-show','Other'].map(v => `<button type="button" class="secondary statusChoice ${status === v ? 'selected' : ''}" ${lockedCancelled && v !== 'Cancel' ? 'disabled' : ''} data-act="chooseStatus" data-args="${esc(JSON.stringify([v]))}">${v}</button>`).join('')}
+              <input id="otherStatusInput" data-in="previewReservationStatus" data-args="${esc(JSON.stringify(['Other']))}" class="${status === 'Other' ? '' : 'hidden'} st-1aff7b1a" maxlength="100" placeholder="請輸入自定義狀態" value="${esc(x.otherStatus || '')}">
+              <button class="primary st-6b99de8b" data-act="saveReservationDetail" data-args="${esc(JSON.stringify([encodeURIComponent(x.id)]))}">儲存</button>
             </div>
           </div>
         </div>
@@ -1877,7 +1877,7 @@ function renderCustomerDetail(){
     body = crmNoteBlock(c) + '<div class="crmCard"><h3>標籤</h3>' + (Array.isArray(c.tags) && c.tags.length ? crmTags(c) : '尚無標籤') +
       '<div class="crmTagAdd"><input id="ct-' + esc(c.id) + '" placeholder="新增標籤">' +
       '<button data-act="addCustomerTag" data-args="' + esc(JSON.stringify([encodeURIComponent(c.id)])) + '">新增</button></div></div>' +
-      '<h3 style="margin-top:14px">歷次預約備註</h3>' +
+      '<h3 class="st-d6f2af6e">歷次預約備註</h3>' +
       (list.length ? list.map(r => '<div class="crmCard"><b>' + esc(String(r.date)) + ' ' + esc(r.serviceName || '') + '</b>' +
         '<br>客人的備註：' + esc(r.note || '—') + '</div>').join('') : '尚無預約');
   }
@@ -2130,7 +2130,7 @@ async function crmDeleteRes(encId){
   if (!panel || document.getElementById('backupView')) return;
   const view = document.createElement('div');
   view.id = 'backupView'; view.className = 'hidden';
-  view.innerHTML = '<div class="glass"><h2>備份設定</h2><div class="backupBtns" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"></div></div>';
+  view.innerHTML = '<div class="glass"><h2>備份設定</h2><div class="backupBtns st-3281c71f"></div></div>';
   const row = view.querySelector('.backupBtns');
   ['exportData', 'importData', 'backupDrive'].forEach(id => { const b = document.getElementById(id); if (b) row.appendChild(b); });
   const fi = document.getElementById('importFile'); if (fi) row.appendChild(fi);
