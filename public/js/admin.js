@@ -168,6 +168,7 @@ async function importDataFromFile(file) {
 
 function showTab(name) {
   if (name === 'customer') crmView = { mode: 'list', id: null, tab: 'overview', filter: 'all', openRes: null };
+  if (name === 'customer' && Array.isArray(customers) && typeof renderCustomers === 'function') renderCustomers();
   if (name === 'reservation') name = 'calendar'; // 合併行事曆（單一分頁）
   ['calendar','reservation','customer','closure','service','recycle','backup'].forEach(x => {
     $(x + 'View').classList.toggle('hidden', x !== name);
@@ -250,6 +251,9 @@ function renderAdminCalendar(data) {
       eventLabel = '已預約';
     }
 
+    // calendarLabelPolish：公休顯示休假原因；過去日期顯示原來資訊；時段公休不顯示
+    if (status === 'CLOSED' || status === 'PAST') eventLabel = x?.closureReason || (reservationCount > 0 ? `已預約 ${reservationCount} 筆` : '');
+    if (status === 'PARTIAL_CLOSED' && reservationCount === 0) eventLabel = '';
     html += `<button type="button" class="calDay ${status.toLowerCase()}" data-date="${date}" data-booked=\"${reservationCount}\" data-status="${status}"><b>${d}</b><div class="calCount">${esc(eventLabel)}</div></button>`;
   }
 
@@ -1633,7 +1637,7 @@ const ACTIONS = {
   crmToggleRes: (el, id) => crmToggleRes(id),
   crmNewReservation: () => crmNewReservation(),
   crmDeleteRes: (el, id) => crmDeleteRes(id),
-  deleteClosureGroup: (el, ids) => deleteClosureGroup(ids),
+  deleteClosureGroup: (el, ...ids) => deleteClosureGroup(ids),
   showHistoryDetail: (el, rid, date) => showHistoryDetail(el, rid, date),
   openCrmForCustomer: (el, cid, phone) => openCrmForCustomer(cid, phone),
   moveServiceUp: (el) => moveServiceRow(el, -1),
@@ -2103,7 +2107,7 @@ async function crmLoadOpenDetail(encId){
   await showDetail(encId);
   // 載入後仍為空：稍後自動重試一次（避免列表重新繪製造成的時序問題）
   if (!$('detail-' + encId) || !$('detail-' + encId).innerHTML.trim()) {
-    await new Promise(res => setTimeout(res, 300));
+    await new Promise(res => setTimeout(res, 200));
     const again = $('detail-' + encId);
     if (again && !again.innerHTML.trim()) await showDetail(encId);
   }
@@ -2189,13 +2193,13 @@ async function loadClosures(){
     html += top.length ? '<div class="admin-list">' + top.map(renderClosureGroupCard).join('') + '</div>' : '<p>目前沒有即將到來的公休。</p>';
     if (rest.length) {
       html += '<details class="adminAccordion" ' + (window.__closureAccordionOpen.others ? 'open' : '') + ' ontoggle="window.__closureAccordionOpen.others=this.open">' +
-        '<summary><span>其他未過期公休</span><span class="accCount">' + rest.length + '</span></summary>' +
+        '<summary><span>其他未來公休</span><span class="accCount">' + rest.length + '</span></summary>' +
         '<div class="admin-list">' + rest.map(renderClosureGroupCard).join('') + '</div></details>';
     }
     if (expired.length) {
       const sortedExp = [...expired].sort((a, b) => (b.date + (b.startTime || '')).localeCompare(a.date + (a.startTime || '')));
       html += '<details class="adminAccordion" ' + (window.__closureAccordionOpen.expired ? 'open' : '') + ' ontoggle="window.__closureAccordionOpen.expired=this.open">' +
-        '<summary><span>Expired</span><span class="accCount">' + expired.length + '</span></summary>' +
+        '<summary><span>已過期公休</span><span class="accCount">' + expired.length + '</span></summary>' +
         '<div class="admin-list">' + sortedExp.map(renderClosureCard).join('') + '</div></details>';
     }
     if (!list.length) html = '<p>目前沒有公休設定。</p>';
