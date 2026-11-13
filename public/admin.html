@@ -334,6 +334,33 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
   #recycleContent .bookingActions{display:flex;gap:8px;flex-wrap:wrap}
 }
 </style>
+<style>
+/* ===== layoutFix2：高優先權覆寫（手機版） ===== */
+@media(max-width:800px){
+  header.glass #logout{display:inline-flex !important;width:auto !important;margin-left:auto !important;flex:0 0 auto}
+  header.glass{flex-direction:row !important;flex-wrap:nowrap !important}
+  header.glass > div:first-child{flex:1 1 auto;min-width:0}
+  #reservationView .adminTools{display:flex !important;flex-direction:row !important;align-items:center;gap:8px;flex-wrap:wrap}
+  #reservationView .adminTools button{width:auto !important;flex:0 0 auto}
+  #reservationView .adminTools .tbAdd{order:1}
+  #reservationView .adminTools .tbQuery{order:2}
+  #reservationView .adminTools .tbClear{order:3;margin-left:auto !important}
+  #customerView .adminTools{display:flex !important;flex-direction:row !important;align-items:center;gap:8px;flex-wrap:wrap}
+  #customerView .adminTools button{width:auto !important;flex:0 0 auto}
+  #customerView .adminTools #customerSearch{flex:1 1 100% !important;width:100%}
+  #customerView .adminTools .tbAdd,#customerView .adminTools #addCustomerBtn{order:1 !important}
+  #customerView .adminTools .tbRefresh,#customerView .adminTools #refreshCustomers{order:2 !important;margin-left:auto !important}
+  #recycleContent .bookingActions{display:flex !important;flex-direction:row !important;gap:8px;flex-wrap:wrap}
+  #recycleContent .bookingActions button{width:auto !important;flex:0 0 auto}
+}
+/* ===== 電腦版：客戶 CRM 新增客人移最右；服務設定新增服務移最右 ===== */
+#customerView .adminTools #addCustomerBtn{order:9}
+#serviceView .adminTools #addServiceRow,#addServiceRow{order:9}
+/* ===== 標籤：長度適應內容（換行） ===== */
+.crmTagCol .crmCard{overflow-wrap:anywhere}
+.crmTagCol .crmCard .crmTag{display:inline-block;max-width:100%;white-space:normal;word-break:break-all;vertical-align:top}
+.crmTagCol .crmTagAdd input{box-sizing:border-box}
+</style>
 </head>
 <body>
 <div id="importConfirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="importConfirmText">
