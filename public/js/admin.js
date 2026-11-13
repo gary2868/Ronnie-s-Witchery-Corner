@@ -2289,6 +2289,7 @@ function arrangeNotesRow(){
   colNote.appendChild(noteCard);
   colTag.appendChild(tagCard);
   histNodes.forEach(n => colHist.appendChild(n));
+  wrapTagChips(tagCard);
 }
 // ===== 個別客戶：刪除客人（刪除後回到名冊）=====
 async function crmDeleteCustomer(enc){
@@ -2318,4 +2319,69 @@ async function crmDeleteCustomer(enc){
     const p = as.parentElement;
     if (p) { p.style.display = 'flex'; p.style.flexWrap = 'wrap'; p.style.alignItems = 'center'; p.style.gap = '8px'; }
   }
+})();
+// ===== layoutBatch3 =====
+// 標籤：每個標籤外框只隨自身文字長度（不被同列最長者拉伸）
+function wrapTagChips(card){
+  if (!card || card.querySelector('.crmTagList')) return;
+  const chips = [...card.querySelectorAll('.crmTag')];
+  if (!chips.length) return;
+  const list = document.createElement('div');
+  list.className = 'crmTagList';
+  chips[0].parentNode.insertBefore(list, chips[0]);
+  chips.forEach(c => list.appendChild(c));
+}
+// 客戶 CRM：新增客人按鍵與總客戶／未來預約並排於右側（參考公休設定）
+(function placeAddCustomerBtn(){
+  const addBtn = document.getElementById('addCustomerBtn');
+  const content = document.getElementById('customerContent');
+  if (!addBtn || !content) return;
+  const place = () => {
+    const sum = content.querySelector('.crmSummary');
+    if (!sum || (sum.parentElement && sum.parentElement.classList.contains('crmTopRow'))) return;
+    const row = document.createElement('div');
+    row.className = 'crmTopRow';
+    sum.parentElement.insertBefore(row, sum);
+    row.append(sum, addBtn);
+  };
+  new MutationObserver(place).observe(content, { childList: true });
+  place();
+})();
+// 服務設定：上下移動置中下、前台顯示勾選框置左下、儲存與移除置右下
+(function arrangeServiceCards(){
+  const box = document.getElementById('serviceContent');
+  if (!box) return;
+  const arrange = () => {
+    box.querySelectorAll('.serviceRow').forEach(row => {
+      if (row.querySelector('.svcFoot')) return;
+      const foot = document.createElement('div'); foot.className = 'svcFoot';
+      const left = document.createElement('div'); left.className = 'svcLeft';
+      const mid = document.createElement('div'); mid.className = 'svcMid';
+      const right = document.createElement('div'); right.className = 'svcRight';
+      const chk = row.querySelector('.svcActive'); const lab = chk ? chk.closest('label') : null;
+      if (lab) left.appendChild(lab);
+      row.querySelectorAll('button[data-act^="moveService"]').forEach(b => mid.appendChild(b));
+      row.querySelectorAll('.svcSave, button[data-act="removeNewServiceRow"]').forEach(b => right.appendChild(b));
+      foot.append(left, mid, right);
+      row.appendChild(foot);
+      const side = row.querySelector('.svcSide'); if (side && !side.children.length) side.style.display = 'none';
+    });
+  };
+  new MutationObserver(arrange).observe(box, { childList: true, subtree: false });
+  arrange();
+})();
+// 日期空白時顯示置中文字「選擇日期」（覆蓋層，不影響點選）
+(function dateHints(){
+  const ids = ['adminDate', 'closureDate', 'closureEndDate'];
+  ids.forEach(id => {
+    const inp = document.getElementById(id);
+    if (!inp || inp.dataset.hinted) return;
+    inp.dataset.hinted = '1';
+    const wrap = document.createElement('div'); wrap.className = 'dateWrap';
+    inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(inp);
+    const hint = document.createElement('span'); hint.className = 'dateHint'; hint.textContent = '選擇日期';
+    wrap.appendChild(hint);
+    const sync = () => { hint.style.display = inp.value ? 'none' : 'flex'; };
+    inp.addEventListener('input', sync); inp.addEventListener('change', sync); sync();
+  });
 })();
