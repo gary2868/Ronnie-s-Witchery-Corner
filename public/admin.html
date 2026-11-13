@@ -361,6 +361,43 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 .crmTagCol .crmCard .crmTag{display:inline-block;max-width:100%;white-space:normal;word-break:break-all;vertical-align:top}
 .crmTagCol .crmTagAdd input{box-sizing:border-box}
 </style>
+<style>
+/* layoutBatch3 */
+/* 標籤：外框隨內容 */
+.crmTagList{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;margin:6px 0}
+.crmTagList .crmTag{display:inline-block;width:auto !important;flex:0 0 auto;max-width:100%}
+/* 客戶 CRM：隱藏重新整理；摘要列右側放新增客人 */
+#refreshCustomers{display:none !important}
+.crmTopRow{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.crmTopRow .crmSummary{margin:0;flex:1 1 auto}
+.crmTopRow #addCustomerBtn{margin-left:auto;flex:0 0 auto}
+/* 服務設定：新增服務在最右（參考公休設定） */
+#addServiceRow{margin-left:auto !important}
+/* 服務方塊底列 */
+.serviceRow{position:relative;display:flex;flex-wrap:wrap}
+.svcFoot{flex:0 0 100%;box-sizing:border-box;display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.svcLeft{flex:0 0 auto}
+.svcMid{flex:1 1 auto;display:flex;justify-content:center;gap:8px}
+.svcRight{flex:0 0 auto;display:flex;gap:8px;align-items:center}
+.svcSave{margin:0}
+/* 日期：空白提示 */
+.dateWrap{position:relative;display:inline-block;width:100%}
+.dateWrap input{width:100%;box-sizing:border-box}
+.dateHint{position:absolute;left:0;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:var(--muted);background:transparent}
+/* 回收桶：還原／永久移除置右下角 */
+#recycleContent .booking{position:relative;padding-bottom:54px}
+#recycleContent .booking .bookingActions{position:absolute;right:14px;bottom:12px;display:flex;gap:8px}
+@media(max-width:800px){
+  /* 手機：登出僅登入後顯示 */
+  header.glass #logout.hidden{display:none !important}
+  /* 預約行事曆：查詢與清除同大小、相鄰（靠右） */
+  #reservationView .adminTools .tbQuery{order:2;margin-left:auto !important}
+  #reservationView .adminTools .tbClear{order:3;margin-left:0 !important}
+  #reservationView .adminTools .tbQuery,#reservationView .adminTools .tbClear{width:96px !important;min-width:96px;text-align:center;justify-content:center}
+}
+/* 桌機：查詢與清除同大小 */
+#reservationView .adminTools .tbQuery,#reservationView .adminTools .tbClear{width:96px !important;min-width:96px;text-align:center}
+</style>
 </head>
 <body>
 <div id="importConfirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="importConfirmText">
