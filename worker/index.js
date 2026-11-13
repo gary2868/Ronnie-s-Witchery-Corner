@@ -51,6 +51,7 @@ export const REQUIRED_CONFIG = {
 /** 回傳「已啟用（on/dry）但缺少」的設定名稱（只回傳名稱，絕不輸出值）。force=true 時不看開關。 */
 function requiredFor(env, feature) {
   if (feature === 'FEATURE_CALENDAR' && env.GOOGLE_AUTH === 'service') return [...SB, 'GOOGLE_SERVICE_ACCOUNT_JSON', 'GOOGLE_CALENDAR_ID'];
+  if (feature === 'FEATURE_BACKUP' && env.GOOGLE_AUTH === 'service') return ['GOOGLE_SERVICE_ACCOUNT_JSON', 'GOOGLE_DRIVE_FOLDER_ID', 'RENDER_BASE_URL', 'INTEGRATION_WORKER_SECRET'];
   return REQUIRED_CONFIG[feature];
 }
 export function missingConfig(env, feature, force = false) {
