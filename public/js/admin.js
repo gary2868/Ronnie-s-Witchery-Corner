@@ -2400,3 +2400,17 @@ function wrapTagChips(card){
   new MutationObserver(arrange).observe(box, { childList: true, subtree: true });
   arrange();
 })();
+// ===== crmSearchRow：電話搜尋移到總客戶／未來預約列（電腦版） =====
+(function crmSearchRow(){
+  const content = document.getElementById('customerContent');
+  const search = document.getElementById('customerSearch');
+  const addBtn = document.getElementById('addCustomerBtn');
+  if (!content || !search || !addBtn) return;
+  const place = () => {
+    const row = content.querySelector('.crmTopRow');
+    if (!row || search.parentElement === row) return;
+    row.insertBefore(search, addBtn);
+  };
+  new MutationObserver(place).observe(content, { childList: true });
+  place();
+})();

@@ -442,6 +442,12 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
   .serviceRow .svcFoot .svcActive{width:44.5px !important;height:23px !important;min-width:0 !important;min-height:0 !important;max-width:none !important;max-height:23px !important}
 }
 </style>
+<style>
+/* crmSearchRow：電腦版電話搜尋置中，與新增客人同列對齊 */
+@media(min-width:801px){
+  .crmTopRow #customerSearch{flex:0 1 260px;width:260px;max-width:260px;margin:0 auto;align-self:center;box-sizing:border-box}
+}
+</style>
 </head>
 <body>
 <div id="importConfirmModal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="importConfirmText">
