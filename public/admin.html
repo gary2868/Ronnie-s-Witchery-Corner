@@ -383,10 +383,10 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 /* 日期：空白提示 */
 .dateWrap{position:relative;display:inline-block;width:100%}
 .dateWrap input{width:100%;box-sizing:border-box}
-.dateHint{position:absolute;left:0;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:var(--muted);background:transparent}
+.dateHint{position:absolute;left:0;right:0;top:0;bottom:0;display:none;align-items:center;justify-content:center;pointer-events:none;color:var(--muted);background:transparent}
 /* 回收桶：還原／永久移除置右下角 */
-#recycleContent .booking{position:relative;padding-bottom:54px}
-#recycleContent .booking .bookingActions{position:absolute;right:14px;bottom:12px;display:flex;gap:8px}
+#recycleContent .booking{position:relative}
+#recycleContent .booking .bookingActions{position:static !important;display:flex;justify-content:flex-end;gap:8px;margin-top:10px;width:100%}
 @media(max-width:800px){
   /* 手機：登出僅登入後顯示 */
   header.glass #logout.hidden{display:none !important}
@@ -397,6 +397,19 @@ body:has(#adminPanel:not(.hidden)) .wrap{margin:0 24px 0 256px!important;max-wid
 }
 /* 桌機：查詢與清除同大小 */
 #reservationView .adminTools .tbQuery,#reservationView .adminTools .tbClear{width:96px !important;min-width:96px;text-align:center}
+</style>
+<style>
+/* layoutFix4 */
+@media(max-width:800px){ .dateWrap.isEmpty .dateHint{display:flex} }
+/* 客戶 CRM 摘要方塊：與公休設定本月／未來公休一致 */
+.crmSummary{display:flex;gap:12px;flex-wrap:wrap}
+.crmSummary>div{flex:0 0 auto;min-width:130px;background:#fff;border:1px solid #ece4f3;border-radius:16px;padding:12px 18px}
+.crmSummary span{display:block;color:var(--muted);font-size:13px}
+.crmSummary b{font-size:22px;color:var(--violet-dark)}
+/* 服務底列：左（前台顯示）、中（上下移動）、右（儲存、移除） */
+.svcFoot .svcLeft{display:flex;align-items:center}
+.svcFoot .svcMid{justify-content:center}
+.svcFoot .svcRight{justify-content:flex-end}
 </style>
 </head>
 <body>

@@ -2355,7 +2355,7 @@ function wrapTagChips(card){
     box.querySelectorAll('.serviceRow').forEach(row => {
       if (row.querySelector('.svcFoot')) return;
       const foot = document.createElement('div'); foot.className = 'svcFoot';
-      const left = document.createElement('div'); left.className = 'svcLeft';
+      const left = document.createElement('div'); left.className = 'svcLeft svcSide';
       const mid = document.createElement('div'); mid.className = 'svcMid';
       const right = document.createElement('div'); right.className = 'svcRight';
       const chk = row.querySelector('.svcActive'); const lab = chk ? chk.closest('label') : null;
@@ -2381,7 +2381,22 @@ function wrapTagChips(card){
     inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(inp);
     const hint = document.createElement('span'); hint.className = 'dateHint'; hint.textContent = '選擇日期';
     wrap.appendChild(hint);
-    const sync = () => { hint.style.display = inp.value ? 'none' : 'flex'; };
+    const sync = () => { wrap.classList.toggle('isEmpty', !inp.value); };
     inp.addEventListener('input', sync); inp.addEventListener('change', sync); sync();
   });
+})();
+// ===== layoutFix4：回收桶按鍵移到卡片最後（靠右） =====
+(function layoutFix4(){
+  const box = document.getElementById('recycleContent');
+  if (!box) return;
+  const arrange = () => {
+    box.querySelectorAll('.booking').forEach(card => {
+      const acts = card.querySelector('.bookingActions');
+      if (acts && acts.parentElement !== card) card.appendChild(acts);
+      else if (acts && acts === card.lastElementChild) return;
+      else if (acts) card.appendChild(acts);
+    });
+  };
+  new MutationObserver(arrange).observe(box, { childList: true, subtree: true });
+  arrange();
 })();
