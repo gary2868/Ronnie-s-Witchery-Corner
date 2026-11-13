@@ -2308,3 +2308,14 @@ async function crmDeleteCustomer(enc){
   mark('#reservationView .adminTools', [['新增預約', 'tbAdd'], ['查詢', 'tbQuery'], ['清除', 'tbClear']]);
   mark('#customerView .adminTools', [['新增客人', 'tbAdd'], ['重新整理', 'tbRefresh']]);
 })();
+// layoutFix2：配色與位置（DOM 只調整 class，不改事件綁定）
+(function layoutFix2(){
+  const rf = document.getElementById('refreshCustomers'), ad = document.getElementById('addCustomerBtn');
+  if (rf && ad) { rf.classList.add('secondary'); ad.classList.remove('secondary'); }
+  const as = document.getElementById('addServiceRow');
+  if (as) {
+    as.classList.remove('secondary'); as.classList.add('primary');
+    const p = as.parentElement;
+    if (p) { p.style.display = 'flex'; p.style.flexWrap = 'wrap'; p.style.alignItems = 'center'; p.style.gap = '8px'; }
+  }
+})();
