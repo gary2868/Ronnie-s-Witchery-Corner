@@ -45,7 +45,7 @@ export const REQUIRED_CONFIG = {
   FEATURE_ADMIN_NOTIFY: [...SB, 'LINE_CHANNEL_ACCESS_TOKEN', 'ADMIN_LINE_USER_ID'],
   FEATURE_REMINDERS: [...SB, 'LINE_CHANNEL_ACCESS_TOKEN'],
   FEATURE_CALENDAR: [...SB, ...GOOGLE, 'GOOGLE_CALENDAR_ID'],
-  FEATURE_BACKUP: [...GOOGLE, 'GOOGLE_DRIVE_FOLDER_ID', 'RENDER_BASE_URL', 'INTEGRATION_WORKER_SECRET'],
+  FEATURE_BACKUP: ['APPS_SCRIPT_URL', 'APPS_SCRIPT_TOKEN', 'RENDER_BASE_URL', 'INTEGRATION_WORKER_SECRET'],
   FEATURE_LINE_BINDING: [...SB, 'LINE_CHANNEL_SECRET', 'LINE_CHANNEL_ACCESS_TOKEN'],
 };
 /** 回傳「已啟用（on/dry）但缺少」的設定名稱（只回傳名稱，絕不輸出值）。force=true 時不看開關。 */
@@ -796,7 +796,7 @@ function parseCounts(h) {
 async function discard(res) { try { await res.body?.cancel(); } catch { /* 已結束 */ } }
 
 /** 今天（台北日期）是否已有成功的備份檔；有就回傳檔名。用於 cron 重試時略過。 */
-async function backupExistsToday(env, deps) {
+async function backupExistsTodayDrive(env, deps) {
   const day = taipeiStamp(deps.now()).slice(0, 8);
   const api = env.GOOGLE_DRIVE_API || 'https://www.googleapis.com/drive/v3';
   const q = `'${env.GOOGLE_DRIVE_FOLDER_ID}' in parents and trashed=false and name contains '${BACKUP_PREFIX}${day}-'`;
@@ -809,7 +809,7 @@ async function backupExistsToday(env, deps) {
  * 串流上傳（預設）：把 Render 回應的「位元組」直接接到 Drive 的可續傳上傳，Worker 不解碼、不解析、不重新編碼。
  * 這是免費方案（每次執行 CPU 10ms）下，唯一不受資料量影響的做法。需要 Content-Length（由 Render 匯出標頭提供）。
  */
-async function driveUploadStream(env, deps, name, stream, len) {
+async function driveUploadStreamLegacy(env, deps, name, stream, len) {
   const api = env.GOOGLE_UPLOAD_API || 'https://www.googleapis.com/upload/drive/v3';
   const init = await gfetch(env, deps, `${api}/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,size`, {
     method: 'POST', body: { name, parents: [env.GOOGLE_DRIVE_FOLDER_ID], mimeType: 'application/json' },
@@ -828,7 +828,7 @@ async function driveUploadStream(env, deps, name, stream, len) {
   try { return JSON.parse(text); } catch { throw new Error('Drive 上傳回應不是 JSON'); }
 }
 /** 緩衝上傳（相容舊版 Render / 沒有 Content-Length / BACKUP_UPLOAD_MODE=buffered）：只適合小檔，有大小上限保護。 */
-async function driveUploadMultipart(env, deps, name, text) {
+async function driveUploadMultipartLegacy(env, deps, name, text) {
   const boundary = `ronnie${deps.now().toString(36)}`;
   const metadata = { name, parents: [env.GOOGLE_DRIVE_FOLDER_ID], mimeType: 'application/json' };
   const rawBody = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`
@@ -839,6 +839,45 @@ async function driveUploadMultipart(env, deps, name, text) {
   return up.json || {};
 }
 
+/* ───── Apps Script 中繼：不需要 Google OAuth 權杖（個人 Gmail 也可用）───── */
+function scriptUrl(env, params) {
+  const base = String(env.APPS_SCRIPT_URL || '').trim();
+  const q = new URLSearchParams(Object.assign({ token: env.APPS_SCRIPT_TOKEN || '' }, params));
+  return base + (base.indexOf('?') >= 0 ? '&' : '?') + q.toString();
+}
+async function scriptResult(res) {
+  const text = await res.text();
+  let json = null; try { json = JSON.parse(text); } catch { /* 非 JSON */ }
+  return { ok: res.ok && json !== null && json.ok === true, status: res.status, json, text };
+}
+/** 今天（台北日期）是否已有成功的備份檔；有就回傳檔名（cron 重試用）。 */
+async function backupExistsToday(env, deps) {
+  const day = taipeiStamp(deps.now()).slice(0, 8);
+  const res = await tfetch(env, deps, scriptUrl(env, { action: 'exists', day }), { method: 'GET' });
+  const r = await scriptResult(res);
+  if (!r.ok) throw transientError('Apps Script 查詢失敗 ' + r.status + ': ' + r.text.slice(0, 200), { status: r.status });
+  return r.json.name || null;
+}
+/** 串流上傳：Render 回應的位元組直接轉送給 Apps Script（不解碼）。 */
+async function scriptUploadStream(env, deps, name, stream, len) {
+  const res = await tfetch(env, deps, scriptUrl(env, { action: 'upload', name }), {
+    method: 'POST', body: stream, duplex: 'half',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': String(len) },
+    signal: AbortSignal.timeout(Math.max(1000, Number(env.BACKUP_UPLOAD_TIMEOUT_MS) || 120_000)),
+  });
+  const r = await scriptResult(res);
+  if (!r.ok) throw transientError('Apps Script 上傳失敗 ' + r.status + ': ' + r.text.slice(0, 200), { status: r.status });
+  return { id: r.json.id, size: r.json.size };
+}
+/** 緩衝上傳（相容模式）。 */
+async function scriptUploadMultipart(env, deps, name, text) {
+  const res = await tfetch(env, deps, scriptUrl(env, { action: 'upload', name }), {
+    method: 'POST', body: text, headers: { 'Content-Type': 'application/json' },
+  });
+  const r = await scriptResult(res);
+  if (!r.ok) throw transientError('Apps Script 上傳失敗 ' + r.status + ': ' + r.text.slice(0, 200), { status: r.status });
+  return { id: r.json.id, size: r.json.size };
+}
 export async function runBackup(env, deps, reason = 'manual') {
   const m = featureMode(env, 'FEATURE_BACKUP');
   if (m === 'off') return { ok: false, skipped: 'off' };
@@ -879,7 +918,7 @@ export async function runBackup(env, deps, reason = 'manual') {
   if (streamable) {
     const max = Number(env.BACKUP_STREAM_MAX_BYTES) || DEFAULT_STREAM_MAX_BYTES;
     if (len > max) { await discard(res); throw new Error(`匯出檔 ${(len / 1048576).toFixed(1)} MB 超過串流上限 ${(max / 1048576).toFixed(0)} MB（BACKUP_STREAM_MAX_BYTES）`); }
-    file = await driveUploadStream(env, deps, name, res.body, len);
+    file = await scriptUploadStream(env, deps, name, res.body, len);
     expectedBytes = len; path = 'stream';
   } else {
     const max = Number(env.BACKUP_MAX_BYTES) || DEFAULT_BUFFERED_MAX_BYTES;
@@ -893,7 +932,7 @@ export async function runBackup(env, deps, reason = 'manual') {
       throw new Error('匯出資料格式不正確，已中止備份');
     }
     counts = { reservations: d.reservations.length, customers: d.customers.length, closures: d.closures.length };
-    file = await driveUploadMultipart(env, deps, name, text);
+    file = await scriptUploadMultipart(env, deps, name, text);
     expectedBytes = Number.isFinite(len) ? len : new TextEncoder().encode(text).length; path = 'buffered';
   }
 
@@ -905,7 +944,7 @@ export async function runBackup(env, deps, reason = 'manual') {
 
   let trashed = 0;
   const hasData = counts.reservations + counts.customers + counts.closures > 0;
-  if (hasData && file.id) trashed = await applyRetention(env, deps, file.id);
+  trashed = 0;   // 保留（保留最新 N 份）由 Apps Script 負責
   logEvent(deps, { task: 'backup', name, counts, bytes: expectedBytes, path, fileId: file.id, trashed, reason });
   return { ok: true, name, fileId: file.id, counts, bytes: expectedBytes, path, trashed };
 }
