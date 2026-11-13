@@ -1066,7 +1066,7 @@ function renderClosureCard(x) {
     </div>
   `;
 }
-async function loadClosures() {
+async function loadClosuresLegacy() {
   try {
     const list = await api('/api/admin/closures');
     const today = taipeiTodayISO();
@@ -1133,7 +1133,7 @@ async function addClosure() {
     const d = await api('/api/admin/closures', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({date, endDate, startTime:start, endTime:end})
+      body:JSON.stringify({date, endDate, startTime:start, endTime:end, reason: (document.getElementById('closureReason') ? document.getElementById('closureReason').value : '').trim()})
     });
 
     $('closureDate').value = '';
@@ -1633,6 +1633,7 @@ const ACTIONS = {
   crmToggleRes: (el, id) => crmToggleRes(id),
   crmNewReservation: () => crmNewReservation(),
   crmDeleteRes: (el, id) => crmDeleteRes(id),
+  deleteClosureGroup: (el, ids) => deleteClosureGroup(ids),
   showHistoryDetail: (el, rid, date) => showHistoryDetail(el, rid, date),
   openCrmForCustomer: (el, cid, phone) => openCrmForCustomer(cid, phone),
   moveServiceUp: (el) => moveServiceRow(el, -1),
@@ -2137,3 +2138,106 @@ function crmDiagDetail(){
 function crmIsFuture(r){
   return r.status === 'CONFIRMED' && (String(r.date) + ' ' + crmHm(r.startTime)) > crmNowKey();
 }
+// ===== 公休設定改版 =====
+window.__closureAccordionOpen = window.__closureAccordionOpen || { expired: false, others: false };
+function closureDayDiff(a, b){ return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000); }
+function closureGroups(list){
+  const sorted = [...list].sort((a, b) => (a.date + (a.startTime || '')).localeCompare(b.date + (b.startTime || '')));
+  const groups = [];
+  for (const x of sorted) {
+    const last = groups[groups.length - 1];
+    const whole = !x.startTime;
+    const reason = x.reason || '公休';
+    if (last && whole && last.whole && last.reason === reason && closureDayDiff(last.end, x.date) === 1) {
+      last.end = x.date; last.ids.push(x.id); last.days++;
+    } else {
+      groups.push({ whole, start: x.date, end: x.date, startTime: x.startTime || '', endTime: x.endTime || '', reason, ids: [x.id], days: 1 });
+    }
+  }
+  return groups;
+}
+function renderClosureGroupCard(g){
+  const dateText = g.whole ? (g.start === g.end ? g.start : g.start + ' ～ ' + g.end + '（' + g.days + ' 天）') : g.start;
+  const timeText = g.whole ? '全天公休' : (g.startTime + '–' + g.endTime + ' 不可預約');
+  const enc = esc(JSON.stringify(g.ids.map(id => encodeURIComponent(id))));
+  return '<div class="booking closureGroup"><div><b>' + esc(dateText) + '</b><br>' + esc(timeText) + ' · ' + esc(g.reason) + '</div>' +
+    '<div class="bookingActions"><button class="danger" data-act="deleteClosureGroup" data-args="' + enc + '">刪除</button></div></div>';
+}
+async function deleteClosureGroup(ids){
+  const list = Array.isArray(ids) ? ids : [];
+  if (!list.length) return;
+  if (!await showAdminActionConfirm('確定刪除此公休？', '確定刪除')) return;
+  try {
+    for (const enc of list) await api('/api/admin/closures/' + enc, { method: 'DELETE' });
+    if (typeof invalidateAllCaches === 'function') invalidateAllCaches();
+  } catch (e) { uiAlert(e.message); }
+  await loadClosures();
+}
+async function loadClosures(){
+  try {
+    const list = await api('/api/admin/closures');
+    const today = taipeiTodayISO();
+    const month = today.slice(0, 7);
+    const future = list.filter(x => x.date >= today);
+    const expired = list.filter(x => x.date < today);
+    const groups = closureGroups(future);
+    const monthDays = list.filter(x => !x.startTime && x.date.slice(0, 7) === month).length;
+    if ($('sumMonth')) $('sumMonth').textContent = monthDays;
+    if ($('sumFuture')) $('sumFuture').textContent = future.length;
+    const top = groups.slice(0, 4), rest = groups.slice(4);
+    let html = '';
+    html += top.length ? '<div class="admin-list">' + top.map(renderClosureGroupCard).join('') + '</div>' : '<p>目前沒有即將到來的公休。</p>';
+    if (rest.length) {
+      html += '<details class="adminAccordion" ' + (window.__closureAccordionOpen.others ? 'open' : '') + ' ontoggle="window.__closureAccordionOpen.others=this.open">' +
+        '<summary><span>其他未過期公休</span><span class="accCount">' + rest.length + '</span></summary>' +
+        '<div class="admin-list">' + rest.map(renderClosureGroupCard).join('') + '</div></details>';
+    }
+    if (expired.length) {
+      const sortedExp = [...expired].sort((a, b) => (b.date + (b.startTime || '')).localeCompare(a.date + (a.startTime || '')));
+      html += '<details class="adminAccordion" ' + (window.__closureAccordionOpen.expired ? 'open' : '') + ' ontoggle="window.__closureAccordionOpen.expired=this.open">' +
+        '<summary><span>Expired</span><span class="accCount">' + expired.length + '</span></summary>' +
+        '<div class="admin-list">' + sortedExp.map(renderClosureCard).join('') + '</div></details>';
+    }
+    if (!list.length) html = '<p>目前沒有公休設定。</p>';
+    $('closureContent').innerHTML = html;
+  } catch (e) {
+    if (e.message === '未登入') showLogin();
+    else $('closureContent').innerHTML = '<p>' + esc(e.message) + '</p>';
+  }
+}
+// ---- ＋新增公休 表單 ----
+function setClosureType(mode){
+  $('closureMode').value = mode;
+  $('closureMode').dispatchEvent(new Event('change'));
+  document.querySelectorAll('#closureModal .typeBtn').forEach(b => b.classList.toggle('selected', b.dataset.mode === mode));
+}
+function openClosureForm(){
+  $('closureDate').value = '';
+  $('closureEndDate').value = '';
+  $('closureReason').value = '公休';
+  setClosureType('all');
+  $('closureModal').classList.remove('hidden');
+}
+function closeClosureForm(){ $('closureModal').classList.add('hidden'); }
+async function submitClosureForm(){
+  const mode = $('closureMode').value;
+  if (!$('closureDate').value) { uiAlert('請選擇公休日期'); return; }
+  if (mode === 'multi' && !$('closureEndDate').value) { uiAlert('請選擇連休結束日期'); return; }
+  if (mode === 'multi' && $('closureEndDate').value < $('closureDate').value) { uiAlert('結束日期不可早於開始日期'); return; }
+  if (mode === 'range' && !$('closureEnd').value) { uiAlert('請選擇公休結束時間'); return; }
+  closeClosureForm();
+  await addClosure();
+}
+function setupClosureForm(){
+  if (window.__closureFormReady) return; window.__closureFormReady = true;
+  const slot = document.getElementById('closureDateSlot');
+  if (!slot || !document.getElementById('closureModal')) return;
+  ['closureMode', 'closureDate', 'closureEndDate', 'closureStart', 'closureEnd'].forEach(id => { const el = document.getElementById(id); if (el) slot.appendChild(el); });
+  document.querySelectorAll('#closureModal .typeBtn').forEach(b => b.addEventListener('click', () => setClosureType(b.dataset.mode)));
+  document.getElementById('openClosureForm').addEventListener('click', openClosureForm);
+  document.getElementById('closureCancel').addEventListener('click', closeClosureForm);
+  document.getElementById('closureSubmit').addEventListener('click', submitClosureForm);
+  document.getElementById('closureModal').addEventListener('click', e => { if (e.target.id === 'closureModal') closeClosureForm(); });
+}
+document.addEventListener('DOMContentLoaded', setupClosureForm);
+if (document.readyState !== 'loading') setupClosureForm();
