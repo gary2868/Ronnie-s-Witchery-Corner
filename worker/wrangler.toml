@@ -20,6 +20,7 @@ FEATURE_CALENDAR = "on"
 FEATURE_BACKUP = "on"
 FEATURE_LINE_BINDING = "on"
 BACKUP_KEEP = "60"
+BACKUP_UPLOAD_MODE = "buffered"
 
 # 保留 Workers Logs（與雲端目前設定一致；未設定時 wrangler deploy 會把它關掉）
 [observability.logs]
