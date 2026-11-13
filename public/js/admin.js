@@ -2130,7 +2130,7 @@ async function crmDeleteRes(encId){
   if (!panel || document.getElementById('backupView')) return;
   const view = document.createElement('div');
   view.id = 'backupView'; view.className = 'hidden';
-  view.innerHTML = '<div class="glass"><h2>備份設定</h2><div class="hint">匯出、匯入後台資料，或備份到 Google Drive。</div><div class="backupBtns" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"></div></div>';
+  view.innerHTML = '<div class="glass"><h2>備份設定</h2><div class="backupBtns" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"></div></div>';
   const row = view.querySelector('.backupBtns');
   ['exportData', 'importData', 'backupDrive'].forEach(id => { const b = document.getElementById(id); if (b) row.appendChild(b); });
   const fi = document.getElementById('importFile'); if (fi) row.appendChild(fi);
