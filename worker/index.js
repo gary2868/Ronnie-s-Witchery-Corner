@@ -878,6 +878,13 @@ async function scriptUploadMultipart(env, deps, name, text, retain = true) {
   if (!r.ok) throw transientError('Apps Script 上傳失敗 ' + r.status + ': ' + r.text.slice(0, 200), { status: r.status });
   return { id: r.json.id, size: r.json.size, trashed: r.json.trashed };
 }
+/** 把上傳失敗的壞檔移到垃圾桶（經 Apps Script；只允許本系統的備份檔）。 */
+async function scriptTrash(env, deps, id) {
+  const res = await tfetch(env, deps, scriptUrl(env, { action: 'trash', id }), { method: 'GET' });
+  const r = await scriptResult(res);
+  if (!r.ok) throw transientError('Apps Script 移除失敗 ' + r.status + ': ' + r.text.slice(0, 200), { status: r.status });
+  return r.json;
+}
 export async function runBackup(env, deps, reason = 'manual') {
   const m = featureMode(env, 'FEATURE_BACKUP');
   if (m === 'off') return { ok: false, skipped: 'off' };
@@ -938,7 +945,7 @@ export async function runBackup(env, deps, reason = 'manual') {
 
   // 驗證上傳結果：Drive 回報的檔案大小必須等於送出的位元組數，否則視為損毀並移到垃圾桶
   if (file.size !== undefined && Number(file.size) !== expectedBytes) {
-    if (file.id) { try { await gfetch(env, deps, `${env.GOOGLE_DRIVE_API || 'https://www.googleapis.com/drive/v3'}/files/${file.id}?supportsAllDrives=true`, { method: 'PATCH', body: { trashed: true } }); } catch { /* 盡力而為 */ } }
+    if (file.id) { try { await scriptTrash(env, deps, file.id); } catch { /* 盡力而為 */ } }
     throw new Error(`上傳大小不符（Drive ${file.size} bytes，預期 ${expectedBytes}），該檔已移到垃圾桶，本次備份視為失敗`);
   }
 

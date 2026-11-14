@@ -107,8 +107,8 @@ describe('整合測試：真實 server.js（Supabase 模式）+ Worker', () => {
     const bk = await api('POST', '/api/admin/backup-to-drive'); assert.equal(bk.status, 200, JSON.stringify(bk.json));
     assert.match(srv.log(), /\[integration\] export accessed/, '備份含個資：匯出必須留下存取紀錄');
     assert.ok(!srv.log().includes('shared-secret'), '日誌不得出現密鑰');
-    assert.equal(m.S.google.files.length, 1); const file = m.S.google.files[0];
-    assert.deepEqual(m.S.google.uploadKinds, ['resumable'], '真實 server 的標頭足以讓 Worker 走串流路徑（不解碼）');
+    assert.equal(m.S.apps.files.filter(f => !f.trashed).length, 1); const file = m.S.apps.files.find(f => !f.trashed);
+    assert.equal(m.S.apps.putHeaders[0]['transfer-encoding'], undefined, 'Apps Script 上傳必須是固定長度（非 chunked）');
     assert.match(file.name, /^Ronnie-Witchery-Corner-backup-v2-\d{8}-\d{4}\.json$/); assert.equal(file.content.data.reservations.length, 1);
 
     // 9) 還原演練：把 Drive 上的檔案匯入一個全新的 server，資料必須一致

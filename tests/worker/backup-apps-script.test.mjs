@@ -144,5 +144,6 @@ describe('Apps Script 中繼：定時與手動備份', () => {
   it('上傳後大小不符 → 本次備份回報失敗（已知缺口：壞檔目前不會被移除）', async () => {
     m.S.render.exportPayload = exportOf(); m.S.apps.truncate = true;
     await assert.rejects(W.runBackup(ENV_ON(), mkDeps(NOW), 'manual'), /上傳大小不符/);
+    assert.equal(m.S.apps.files.filter(f => !f.trashed).length, 0, '壞檔應已移到垃圾桶');
   });
 });
