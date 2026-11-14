@@ -260,6 +260,11 @@ export async function startMocks(port = 0) {
     const A = S.apps; A.requests++;
     if (u.searchParams.get('token') !== KEYS.appsToken) return send(res, 200, { ok: false, error: 'unauthorized' });
     const action = u.searchParams.get('action');
+    if (req.method === 'GET' && action === 'trash') {
+      const f = A.files.find(x => x.id === u.searchParams.get('id'));
+      if (!f || !/^Ronnie-Witchery-Corner-backup-v2-\d{8}-\d{4}\.json$/.test(f.name)) return send(res, 200, { ok: false, error: 'not a backup file' });
+      f.trashed = true; return send(res, 200, { ok: true });
+    }
     if (req.method === 'GET' && action === 'exists') {
       const day = u.searchParams.get('day') || '';
       const hit = A.files.find(f => !f.trashed && f.name.indexOf('-' + day + '-') >= 0);
