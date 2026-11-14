@@ -859,24 +859,24 @@ async function backupExistsToday(env, deps) {
   return r.json.name || null;
 }
 /** 串流上傳：Render 回應的位元組直接轉送給 Apps Script（不解碼）。 */
-async function scriptUploadStream(env, deps, name, stream, len) {
-  const res = await tfetch(env, deps, scriptUrl(env, { action: 'upload', name }), {
+async function scriptUploadStream(env, deps, name, stream, len, retain = true) {
+  const res = await tfetch(env, deps, scriptUrl(env, { action: 'upload', name, retain: retain ? '1' : '0' }), {
     method: 'POST', body: stream, duplex: 'half',
     headers: { 'Content-Type': 'application/json', 'Content-Length': String(len) },
     signal: AbortSignal.timeout(Math.max(1000, Number(env.BACKUP_UPLOAD_TIMEOUT_MS) || 120_000)),
   });
   const r = await scriptResult(res);
   if (!r.ok) throw transientError('Apps Script 上傳失敗 ' + r.status + ': ' + r.text.slice(0, 200), { status: r.status });
-  return { id: r.json.id, size: r.json.size };
+  return { id: r.json.id, size: r.json.size, trashed: r.json.trashed };
 }
 /** 緩衝上傳（相容模式）。 */
-async function scriptUploadMultipart(env, deps, name, text) {
-  const res = await tfetch(env, deps, scriptUrl(env, { action: 'upload', name }), {
+async function scriptUploadMultipart(env, deps, name, text, retain = true) {
+  const res = await tfetch(env, deps, scriptUrl(env, { action: 'upload', name, retain: retain ? '1' : '0' }), {
     method: 'POST', body: text, headers: { 'Content-Type': 'application/json' },
   });
   const r = await scriptResult(res);
   if (!r.ok) throw transientError('Apps Script 上傳失敗 ' + r.status + ': ' + r.text.slice(0, 200), { status: r.status });
-  return { id: r.json.id, size: r.json.size };
+  return { id: r.json.id, size: r.json.size, trashed: r.json.trashed };
 }
 export async function runBackup(env, deps, reason = 'manual') {
   const m = featureMode(env, 'FEATURE_BACKUP');
@@ -918,7 +918,7 @@ export async function runBackup(env, deps, reason = 'manual') {
   if (streamable) {
     const max = Number(env.BACKUP_STREAM_MAX_BYTES) || DEFAULT_STREAM_MAX_BYTES;
     if (len > max) { await discard(res); throw new Error(`匯出檔 ${(len / 1048576).toFixed(1)} MB 超過串流上限 ${(max / 1048576).toFixed(0)} MB（BACKUP_STREAM_MAX_BYTES）`); }
-    file = await scriptUploadStream(env, deps, name, res.body, len);
+    file = await scriptUploadStream(env, deps, name, res.body, len, (counts.reservations + counts.customers + counts.closures) > 0);
     expectedBytes = len; path = 'stream';
   } else {
     const max = Number(env.BACKUP_MAX_BYTES) || DEFAULT_BUFFERED_MAX_BYTES;
@@ -932,7 +932,7 @@ export async function runBackup(env, deps, reason = 'manual') {
       throw new Error('匯出資料格式不正確，已中止備份');
     }
     counts = { reservations: d.reservations.length, customers: d.customers.length, closures: d.closures.length };
-    file = await scriptUploadMultipart(env, deps, name, text);
+    file = await scriptUploadMultipart(env, deps, name, text, (counts.reservations + counts.customers + counts.closures) > 0);
     expectedBytes = Number.isFinite(len) ? len : new TextEncoder().encode(text).length; path = 'buffered';
   }
 
@@ -944,7 +944,7 @@ export async function runBackup(env, deps, reason = 'manual') {
 
   let trashed = 0;
   const hasData = counts.reservations + counts.customers + counts.closures > 0;
-  trashed = 0;   // 保留（保留最新 N 份）由 Apps Script 負責
+  trashed = Number(file.trashed) || 0;   // 保留由 Apps Script 執行，這裡回報實際移到垃圾桶的數量
   logEvent(deps, { task: 'backup', name, counts, bytes: expectedBytes, path, fileId: file.id, trashed, reason });
   return { ok: true, name, fileId: file.id, counts, bytes: expectedBytes, path, trashed };
 }

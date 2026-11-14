@@ -4,7 +4,7 @@ import './polyfill.mjs';
 import http from 'node:http';
 import zlib from 'node:zlib';
 
-export const KEYS = { supabase: 'sb-service-key', line: 'line-token', googleRefresh: 'g-refresh' };
+export const KEYS = { supabase: 'sb-service-key', line: 'line-token', googleRefresh: 'g-refresh', appsToken: 'apps-token' };
 const RES_COLS = ['id','booking_code','name','birth_date','phone','line_id','note','service_id','service_name','duration_minutes','date','start_time','end_time','service_slots','slots','status','created_at','updated_at','cancelled_at'];
 const COLS = {
   reservations: RES_COLS,
@@ -169,6 +169,8 @@ export async function startMocks(port = 0) {
     send(res, 404, {});
   }
 
+  S.apps = { files: [], putHeaders: [], failUpload: 0, truncate: false, seq: 0, requests: 0 };
+
   // ---------- Google ----------
   const G = S.google;
   function gAuth(req, res) {
@@ -253,6 +255,38 @@ export async function startMocks(port = 0) {
     send(res, 404, {});
   }
 
+  // ---------- Apps Script 中繼（取代直接呼叫 Drive）----------
+  async function appsScript(req, res, u) {
+    const A = S.apps; A.requests++;
+    if (u.searchParams.get('token') !== KEYS.appsToken) return send(res, 200, { ok: false, error: 'unauthorized' });
+    const action = u.searchParams.get('action');
+    if (req.method === 'GET' && action === 'exists') {
+      const day = u.searchParams.get('day') || '';
+      const hit = A.files.find(f => !f.trashed && f.name.indexOf('-' + day + '-') >= 0);
+      return send(res, 200, { ok: true, name: hit ? hit.name : null });
+    }
+    if (req.method === 'POST' && action === 'upload') {
+      if (A.failUpload > 0) { A.failUpload--; req.resume(); return send(res, 200, { ok: false, error: 'script down' }); }
+      const name = u.searchParams.get('name') || '';
+      if (!/^Ronnie-Witchery-Corner-backup-v2-\d{8}-\d{4}\.json$/.test(name)) return send(res, 200, { ok: false, error: 'bad name' });
+      const buf = await readBuf(req);
+      const declared = Number(req.headers['content-length']);
+      if (Number.isFinite(declared) && declared !== buf.length) return send(res, 200, { ok: false, error: 'length mismatch' });
+      const stored = A.truncate ? buf.subarray(0, Math.floor(buf.length / 2)) : buf;   // 模擬：只存到一半
+      let content; try { content = JSON.parse(stored.toString('utf8')); } catch { content = stored.toString('utf8'); }
+      A.seq++;
+      const f = { id: 'apps' + A.seq, name, content, bytes: stored.length, trashed: false, createdTime: new Date(Date.now() + A.seq).toISOString() };
+      A.files.push(f);
+      A.putHeaders.push({ 'content-length': req.headers['content-length'], 'transfer-encoding': req.headers['transfer-encoding'] });
+      // 保留：只處理符合本系統命名規則的檔案，保留最新 60 份（模擬 Apps Script 端的規則）
+      const alive = A.files.filter(x => !x.trashed && /^Ronnie-Witchery-Corner-backup-v2-\d{8}-\d{4}\.json$/.test(x.name)).sort((a, b) => b.createdTime.localeCompare(a.createdTime));
+      const surplus = u.searchParams.get('retain') === '0' ? [] : alive.slice(60);
+      surplus.forEach(x => { x.trashed = true; });
+      return send(res, 200, { ok: true, id: f.id, size: stored.length, trashed: surplus.length });
+    }
+    return send(res, 200, { ok: false, error: 'unknown action' });
+  }
+
   const server = http.createServer(async (req, res) => {
     S.requests++;
     const u = new URL(req.url, 'http://x');
@@ -298,6 +332,7 @@ export async function startMocks(port = 0) {
         if (S.render.chunked) { const mid = Math.floor(body.length / 2); res.write(body.slice(0, mid)); return setTimeout(() => res.end(body.slice(mid)), 5); }
         return res.end(body);
       }
+      if (u.pathname === '/apps/exec') return appsScript(req, res, u);
       if (u.pathname === '/worker/wake') { S.wakes.push(req.headers['x-worker-secret']); return send(res, 202, { ok: true }); }
       send(res, 404, { message: 'not found' });
     } catch (e) { send(res, 500, { message: String(e) }); }
@@ -308,6 +343,7 @@ export async function startMocks(port = 0) {
   return {
     S, base, port: p,
     reset() { for (const k of Object.keys(S.tables)) S.tables[k] = []; S.line.pushes = []; S.line.attempts = 0; S.line.replyAttempts = 0; S.line.failReply = 0; S.line.replies = []; S.line.retryKeys.clear(); S.line.failNext = 0;
+      Object.assign(S.apps, { files: [], putHeaders: [], failUpload: 0, truncate: false, seq: 0, requests: 0 });
       Object.assign(S.google, { sessions: new Map(), uploadKinds: [], putHeaders: [], failPut: 0, truncateUpload: false, ignoreMaxResults: false, ignoreDelete: false, leakForeign: false, tokenFail: false, failStatus: 503, tokenCalls: 0, events: new Map(), tombstones: new Set(), files: [], apiCalls: [], expireTokenOnce: false, pageSize: 250, seq: 0, failNext: { calendar: 0, drive: 0 } });
       S.render.exportPayload = null; S.render.status = 200; S.render.exportCalls = 0; S.render.legacy = false; S.render.chunked = false; S.render.proxyGzip = false; S.render.forceGzip = false; S.render.lieBytes = 0; S.render.lastAcceptEncoding = ''; S.requests = 0; S.wakes = []; S.log = []; S.fail = []; S.delay = []; S.jobStatuses = ['pending', 'done', 'failed']; S.dropped = null; S.noUnique = false; S.noTokenUnique = false; S.deleteReturnsNothing = false; },
     env(extra = {}) {
@@ -316,6 +352,7 @@ export async function startMocks(port = 0) {
         LINE_API_BASE: base + '/line', LINE_CHANNEL_ACCESS_TOKEN: KEYS.line, LINE_CHANNEL_SECRET: 'line-channel-secret', ADMIN_LINE_USER_ID: 'U_ADMIN',
         GOOGLE_TOKEN_URL: base + '/google/token', GOOGLE_CALENDAR_API: base + '/google/calendar/v3', GOOGLE_DRIVE_API: base + '/google/drive/v3', GOOGLE_UPLOAD_API: base + '/google/upload/drive/v3',
         GOOGLE_CLIENT_ID: 'cid', GOOGLE_CLIENT_SECRET: 'csecret', GOOGLE_REFRESH_TOKEN: KEYS.googleRefresh, GOOGLE_CALENDAR_ID: 'cal@group.calendar.google.com', GOOGLE_DRIVE_FOLDER_ID: 'FOLDER1',
+        APPS_SCRIPT_URL: base + '/apps/exec', APPS_SCRIPT_TOKEN: KEYS.appsToken,
         RENDER_BASE_URL: base + '/render', INTEGRATION_WORKER_SECRET: 'shared-secret',
         ...extra,
       };
